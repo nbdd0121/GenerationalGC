@@ -38,6 +38,5 @@ When you use tagged pointers, make sure you are **NOT** calling virtual function
 - Use `norlit::gc::Handle` to manage reference on heap instead of pointers.
 
 ##Currently Problems
- - The class Handle is a stub. Currently it is implemented by a on-stack object, which is super inefficient. It will soon be changed in the future.
  - Marking is inefficient. Currently there is no queue implemented, so a walk through all objects for several times is needed.
  - This is single threaded. This is probably not going to change since the author has no demand for multi-threading, and cost for maintaining thread synchronization is high. A stop-the-world is needed which cannot be written in a portable way.
