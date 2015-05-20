@@ -2,7 +2,6 @@
 #include "debug.h"
 
 #include "Heap.h"
-#include "Reflection.h"
 #include "MemorySpace.h"
 #include "Platform.h"
 
@@ -71,7 +70,7 @@ struct Heap::DecRefIterator : public FieldIterator {
 };
 
 
-Object Heap::stack_space{nullptr};
+Object Heap::stack_space{};
 Heap::LargeObjectNode Heap::large_object_space{
     &large_object_space,
     &large_object_space
@@ -196,9 +195,7 @@ void Heap::UntrackStackObject(Object* object) {
 
     // When we release a stack object, we decrease refcount,
     // otherwise the referenced object can only be reclaimed in MajorGC
-    if (object->reflection_) {
-        object->reflection_->IterateField(object, DecRefIterator{});
-    }
+    object->IterateField(DecRefIterator{});
     // Detach from linked list
     object->stack_.prev_->stack_.next_ = object->stack_.next_;
     object->stack_.next_->stack_.prev_ = object->stack_.prev_;
@@ -226,9 +223,7 @@ void Heap::Major_ScanHeapRoot() {
     for (Object* object = stack_space.stack_.next_;
             object != &stack_space;
             object = object->stack_.next_) {
-        if (object->reflection_) {
-            object->reflection_->IterateField(object, MarkingIterator{});
-        }
+        object->IterateField(MarkingIterator{});
     }
 }
 
@@ -243,9 +238,7 @@ bool Heap::Mark(MemorySpace* space) {
                 objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
             if (object->status_ == Status::MARKING) {
                 modified = true;
-                if (object->reflection_) {
-                    object->reflection_->IterateField(object, MarkingIterator{});
-                }
+                object->IterateField(MarkingIterator{});
                 object->status_ = Status::MARKED;
             }
         }
@@ -262,9 +255,7 @@ bool Heap::Major_MarkLargeObject() {
         Object* object = reinterpret_cast<Object*>(node+1);
         if (object->status_ == Status::MARKING) {
             modified = true;
-            if (object->reflection_) {
-                object->reflection_->IterateField(object, MarkingIterator{});
-            }
+            object->IterateField(MarkingIterator{});
             object->status_ = Status::MARKED;
         }
     }
@@ -308,9 +299,7 @@ void Heap::UpdateReference(MemorySpace* space) {
                 objectPtr < space->End();
                 objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
             if (object->status_ == Status::MARKED) {
-                if (object->reflection_) {
-                    object->reflection_->IterateField(object, UpdateIterator{});
-                }
+                object->IterateField(UpdateIterator{});
             }
         }
         space = space->next;
@@ -329,9 +318,7 @@ void Heap::Minor_UpdateTenuredReference() {
                 objectPtr < space->OriginalEnd();
                 objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
             object->status_ = Status::NOT_MARKED;
-            if (object->reflection_) {
-                object->reflection_->IterateField(object, UpdateIterator{});
-            }
+            object->IterateField(UpdateIterator{});
         }
         space = space->next;
     } while (space);
@@ -344,9 +331,7 @@ void Heap::Minor_UpdateLargeObjectReference() {
             node = node->next) {
         Object* object = reinterpret_cast<Object*>(node+1);
         object->status_ = Status::NOT_MARKED;
-        if (object->reflection_) {
-            object->reflection_->IterateField(object, UpdateIterator{});
-        }
+        object->IterateField(UpdateIterator{});
     }
 }
 
@@ -363,9 +348,7 @@ void Heap::Major_UpdateTenuredReference() {
                 objectPtr < space->OriginalEnd();
                 objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
             if (object->status_ == Status::MARKED) {
-                if (object->reflection_) {
-                    object->reflection_->IterateField(object, UpdateIterator{});
-                }
+                object->IterateField(UpdateIterator{});
             }
         }
         space = space->next;
@@ -379,9 +362,7 @@ void Heap::Major_UpdateLargeObjectReference() {
             node = node->next) {
         Object* object = reinterpret_cast<Object*>(node+1);
         if (object->status_ == Status::MARKED) {
-            if (object->reflection_) {
-                object->reflection_->IterateField(object, UpdateIterator{});
-            }
+            object->IterateField(UpdateIterator{});
         }
     }
 }
@@ -426,9 +407,7 @@ void Heap::UpdateStackReference() {
     for (Object* object = stack_space.stack_.next_;
             object != &stack_space;
             object = object->stack_.next_) {
-        if (object->reflection_) {
-            object->reflection_->IterateField(object, UpdateIterator{});
-        }
+        object->IterateField(UpdateIterator{});
     }
 }
 
@@ -465,10 +444,8 @@ void Heap::PromoteToTenuredSpace(Object *object) {
     object->dest_ = static_cast<Object*>(target);
     debug("Object %p [Survivor] is promoted to %p [Tenure]\n", object, object->dest_);
     object->space_ = Space::TENURED_SPACE;
-    if (object->reflection_) {
-        // Since in tenured space, we use reference counting to avoid the marking phase, we increase ref here
-        object->reflection_->IterateField(object, IncRefIterator{});
-    }
+    // Since in tenured space, we use reference counting to avoid the marking phase, we increase ref here
+    object->IterateField(IncRefIterator{});
 }
 
 void Heap::SurvivorSpace_CalculateTarget() {
@@ -516,9 +493,7 @@ void Heap::TenuredSpace_CalculateTarget() {
             } else {
                 // When tenured objects are collected, decrease ref to
                 // allow referenced young objects to be recycled in minor GC
-                if (object->reflection_) {
-                    object->reflection_->IterateField(object, DecRefIterator{});
-                }
+                object->IterateField(DecRefIterator{});
                 debug("Reclaim Tenured %p\n", object);
                 object->dest_ = nullptr;
             }

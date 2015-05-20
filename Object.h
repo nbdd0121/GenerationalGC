@@ -10,14 +10,24 @@
 namespace norlit {
 namespace gc {
 
-template<typename T>
-class Reflection;
+class Object;
+
+// An overloaded functor that iterates through fields of an object
+class FieldIterator {
+  public:
+    static class {} weak;
+
+    virtual void operator()(Object** field) const = 0;
+    virtual void operator()(Object** field, decltype(weak)) const = 0;
+
+    template<typename T>
+    void operator()(T** field) const {
+        operator()(reinterpret_cast<Object**>(field));
+    }
+};
 
 class Object {
   private:
-    // Type information
-    Reflection<Object>* reflection_;
-
     union {
         struct {
             // Double linked list that connects all stack objects
@@ -49,14 +59,14 @@ class Object {
     void SlowWriteBarrier(Object** slot, Object* data);
 
   protected:
-    inline Reflection<Object>* GetReflection();
-
     inline void WriteBarrier(Object** slot, Object* data);
     template<typename T>
     inline void WriteBarrier(T** slot, T* data);
 
+    virtual void IterateField(const FieldIterator&);
+
   public:
-    Object(Reflection<Object>*);
+    Object();
     virtual ~Object();
 
     // TODO: Implement copy-ctor and move-ctor for stack objects?
@@ -98,10 +108,6 @@ inline void Object::IncRefCount() {
 inline void Object::DecRefCount() {
     assert(space_ != Space::STACK_SPACE);
     refcount_--;
-}
-
-inline Reflection<Object>* Object::GetReflection() {
-    return reflection_;
 }
 
 }

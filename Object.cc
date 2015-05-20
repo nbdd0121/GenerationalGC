@@ -6,7 +6,9 @@
 
 using namespace norlit::gc;
 
-Object::Object(Reflection<Object>* reflection):reflection_(reflection) {
+decltype(FieldIterator::weak) FieldIterator::weak;
+
+Object::Object() {
     Heap::Initialize(this);
 }
 
@@ -32,6 +34,10 @@ void Object::SlowWriteBarrier(Object** slot, Object* data) {
         default:
             assert(0);
     }
+}
+
+void Object::IterateField(const FieldIterator& iter) {
+
 }
 
 void* Object::operator new(size_t size) {

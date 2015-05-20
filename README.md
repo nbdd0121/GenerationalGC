@@ -33,7 +33,7 @@ When you use tagged pointers, make sure you are **NOT** calling virtual function
 - All GC objects are **REQUIRED** to inherit from `norlit::gc::Object`.
 - To allocate a object on gc heap, simply use new operator.
 - When writing to a GC-managed pointer, do not use assignment. Instead, use `WriteBarrier(&field, data)` in replace of `field = data`; This is essential since Tenured Space, Large Object Space and Stack Space use reference counting mechanism.
-- `norlit::gc::Object` has a constructor take argument of `norlit::gc::Reflection`. You should create a class inherit from Reflection&lt;T> and  override `virtual void IterateField(T*, const norlit::gc::FieldIterator&)`. As a special case, if you do not have any field, you may also pass `nullptr` as a argument.
+- Override `virtual void IterateField(const norlit::gc::FieldIterator&)` and call the iterator with pointer to each managed pointer in the class.
 - Use `norlit::gc::Heap::MinorGC()` or `norlit::gc::Heap::MajorGC()` to trigger garbage collection.
 - Use `norlit::gc::Handle` to manage reference on heap instead of pointers.
 

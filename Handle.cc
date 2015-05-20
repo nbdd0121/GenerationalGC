@@ -6,10 +6,7 @@ namespace norlit {
 namespace gc {
 namespace detail {
 class HandleGroup;
-class HandleGroupReflection;
 }
-
-struct HandleReflection;
 }
 }
 
@@ -25,6 +22,10 @@ class norlit::gc::detail::HandleGroup : public Object {
     HandleGroup* next_ = nullptr;
     size_t size_ = 0;
     Object* handles_[kHandlesPerGroup];
+
+  protected:
+    virtual void IterateField(const FieldIterator& iter) override;
+
   public:
     HandleGroup();
 
@@ -39,26 +40,21 @@ class norlit::gc::detail::HandleGroup : public Object {
     void* operator new(size_t size) {
         return ::operator new(size);
     }
-
-    friend class HandleGroupReflection;
-};
-
-class norlit::gc::detail::HandleGroupReflection : public Reflection<HandleGroup> {
-    virtual void IterateField(HandleGroup* g, const FieldIterator& iter) {
-        if (g->size_) {
-            for (size_t i = 0; i < HandleGroup::kHandlesPerGroup; i++) {
-                iter(&g->handles_[i]);
-            }
-        }
-    }
 };
 
 namespace {
-HandleGroupReflection reflection;
 HandleGroup* root = nullptr;
 }
 
-HandleGroup::HandleGroup(): Object(&reflection) {
+void HandleGroup::IterateField(const FieldIterator& iter) {
+    if (size_) {
+        for (size_t i = 0; i < kHandlesPerGroup; i++) {
+            iter(&handles_[i]);
+        }
+    }
+}
+
+HandleGroup::HandleGroup() {
     for (size_t i = 0; i < kHandlesPerGroup; i++) {
         handles_[i] = nullptr;
     }

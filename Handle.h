@@ -2,7 +2,6 @@
 #define NORLIT_GC_HANDLE_H
 
 #include "Object.h"
-#include "Reflection.h"
 
 #include <utility>
 
