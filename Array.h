@@ -69,13 +69,13 @@ class ValueArray : public Object {
     }
 
     ValueArray(size_t length) :length(length) {
-        for (int i = 0; i < length; i++) {
+        for (size_t i = 0; i < length; i++) {
             new(&At(i)) T();
         }
     }
 
     virtual ~ValueArray() {
-        for (int i = 0; i < length; i++) {
+        for (size_t i = 0; i < length; i++) {
             At(i).~T();
         }
     }
