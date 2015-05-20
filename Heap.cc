@@ -88,6 +88,12 @@ void Heap::GlobalInitialize() {
     survivor_from_space = MemorySpace::New(MEMORY_SPACE_SIZE);
     survivor_to_space = MemorySpace::New(MEMORY_SPACE_SIZE);
     tenured_space = MemorySpace::New(MEMORY_SPACE_SIZE);
+#if NORLIT_DEBUG_MODE
+    eden_space->FillUnallocated(0xCC);
+    survivor_from_space->FillUnallocated(0xCC);
+    survivor_to_space->FillUnallocated(0xCC);
+    tenured_space->FillUnallocated(0xCC);
+#endif
 }
 
 void Heap::GlobalDestroy() {
