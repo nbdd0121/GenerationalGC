@@ -29,6 +29,8 @@ You **SHOULD** use static methods that take `const Handle&` if the method contai
 
 When you use tagged pointers, make sure you are **NOT** calling virtual functions on tagged pointers.
 
+When objects are moved in heap, **NO** copy-ctor or any kind of notification will be made.
+
 ##API Reference
 - All GC objects are **REQUIRED** to inherit from `norlit::gc::Object`.
 - To allocate a object on gc heap, simply use new operator.
