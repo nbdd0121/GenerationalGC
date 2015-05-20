@@ -43,6 +43,7 @@ When objects are moved in heap, **NO** copy-ctor or any kind of notification wil
 - Use `norlit::gc::Heap::MinorGC()` or `norlit::gc::Heap::MajorGC()` to trigger garbage collection.
 - Use `norlit::gc::Handle` to manage reference on heap instead of pointers.
 - All allocated heap objects are guaranteed to align on 8 bytes. Tagged pointers are allowed and will not be considered in GC.
+- Use `norlit::gc::Array<T>` for an array of references. Use `norlit::gc::ValueArray<T>` for an array of non-gc-managed values (such as POD types).
 
 ##Currently Problems
  - Marking is inefficient. Currently there is no queue implemented, so a walk through all objects for several times is needed.
