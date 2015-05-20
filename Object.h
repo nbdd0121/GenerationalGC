@@ -74,6 +74,7 @@ class Object {
     void operator =(const Object&) = delete;
 
     static void* operator new(size_t);
+    static void* operator new[](size_t) = delete;
     static void operator delete(void*);
 
     friend class Heap;
