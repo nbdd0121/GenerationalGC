@@ -79,7 +79,7 @@ MemorySpace* Heap::eden_space;
 MemorySpace* Heap::survivor_from_space;
 MemorySpace* Heap::survivor_to_space;
 MemorySpace* Heap::tenured_space;
-size_t Heap::allocating_size = 0;
+uint32_t Heap::allocating_size = 0;
 bool Heap::full_gc_suggested = false;
 
 void Heap::GlobalInitialize() {
@@ -110,8 +110,15 @@ void Heap::GlobalDestroy() {
 }
 
 void* Heap::Allocate(size_t size) {
+    if (size > 0xFFFFFFFF) {
+        throw std::bad_alloc{};
+    }
+
     // Align to 8 bytes
     size = (size + 7) &~7;
+
+    // Set allocating_size so Heap::Initialize can receive info
+    allocating_size = static_cast<uint32_t>(size);
 
     if (size > LARGE_OBJECT_THRESHOLD) {
         if (full_gc_suggested) {
@@ -120,8 +127,6 @@ void* Heap::Allocate(size_t size) {
         } else {
             full_gc_suggested = true;
         }
-
-        allocating_size = size;
 
         LargeObjectNode* node = static_cast<LargeObjectNode*>(Platform::Allocate(sizeof(LargeObjectNode) + size));
         node->prev = large_object_space.prev;
@@ -134,8 +139,6 @@ void* Heap::Allocate(size_t size) {
         return ret;
     }
 
-    // Set allocating_size so Heap::Initialize can receive info
-    allocating_size = size;
     void* ret = eden_space->Allocate(size);
     if (!ret) {
         debug("Reason: Eden space out of memory\n");

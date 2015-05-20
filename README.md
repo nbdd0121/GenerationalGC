@@ -23,6 +23,10 @@ Object* arg0 = new Object(); // or use handle
 handle->Method(arg0);
 ```
 
+> Note:
+> In most compilers the wrong sample works (these compilers sequence evaluation of arguments before evaluation of this argument).
+> But the C++ specification states the evaluation as unsequenced, so it is undefined behavior and may cause problems.
+
 You **SHOULD** use static methods that take `const Handle&` if the method contains actions that might trigger GC, such as new operation.
 
 **DO NOT USE** multi-inheritance. The class data layout can be unexpected, causing errors.

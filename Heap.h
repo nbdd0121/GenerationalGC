@@ -30,7 +30,7 @@ class Heap {
     static MemorySpace* tenured_space;
 
     // Size of allocating object. Passed from Allocate() to Initialize()
-    static size_t allocating_size;
+    static uint32_t allocating_size;
     // Suggest a full gc is needed. Set when tenured space is expanded
     static bool full_gc_suggested;
 
