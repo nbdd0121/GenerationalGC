@@ -1,23 +1,146 @@
 #include "Handle.h"
+#include <bitset>
+#include <cassert>
 
 namespace norlit {
 namespace gc {
+namespace detail {
+class HandleGroup;
+class HandleGroupReflection;
+}
+
 struct HandleReflection;
 }
 }
 
 using namespace norlit::gc;
+using namespace norlit::gc::detail;
 
-struct norlit::gc::HandleReflection : public Reflection<HandleBase> {
-    static HandleReflection instance;
+class norlit::gc::detail::HandleGroup : public Object {
+  private:
+    static const size_t kHandlesPerGroup = 1024;
 
-    virtual void IterateField(HandleBase* h, const FieldIterator& iter) {
-        iter(&h->object_);
+    // Tracks allocation using a bitmap_. TODO: Use a custom class to accelerate the allocation
+    std::bitset<kHandlesPerGroup> bitmap_;
+    HandleGroup* next_ = nullptr;
+    size_t size_ = 0;
+    Object* handles_[kHandlesPerGroup];
+  public:
+    HandleGroup();
+
+    Object** Allocate();
+    void Free(Object** ptr);
+    void Write(Object** ptr, Object* data) {
+        WriteBarrier(ptr, data);
+    }
+
+    // HandleRoot is intended to serve as root.
+    // Therefore, it should not be managed by heap
+    void* operator new(size_t size) {
+        return ::operator new(size);
+    }
+
+    friend class HandleGroupReflection;
+};
+
+class norlit::gc::detail::HandleGroupReflection : public Reflection<HandleGroup> {
+    virtual void IterateField(HandleGroup* g, const FieldIterator& iter) {
+        if (g->size_) {
+            for (size_t i = 0; i < HandleGroup::kHandlesPerGroup; i++) {
+                iter(&g->handles_[i]);
+            }
+        }
     }
 };
 
-HandleReflection HandleReflection::instance;
+namespace {
+HandleGroupReflection reflection;
+HandleGroup* root = nullptr;
+}
 
-HandleBase::HandleBase(Object* obj) :Object(&HandleReflection::instance) {
-    WriteBarrier(&object_, obj);
+HandleGroup::HandleGroup(): Object(&reflection) {
+    for (size_t i = 0; i < kHandlesPerGroup; i++) {
+        handles_[i] = nullptr;
+    }
+}
+
+Object** HandleGroup::Allocate() {
+    for (size_t i = 0; i < kHandlesPerGroup; i++) {
+        if (!bitmap_.test(i)) {
+            bitmap_.set(i);
+            size_++;
+            return &handles_[i];
+        }
+    }
+    if (!next_) {
+        next_ = new HandleGroup();
+    }
+    return next_->Allocate();
+}
+
+void HandleGroup::Free(Object** ptr) {
+    int offset = ptr - handles_;
+    if (offset >= 0 && offset < static_cast<int>(kHandlesPerGroup)) {
+        *ptr = nullptr;
+        bitmap_.reset(offset);
+        size_--;
+    } else {
+        assert(next_);
+        next_->Free(ptr);
+        if (!next_->size_) {
+            HandleGroup* temp = next_;
+            next_ = temp->next_;
+            temp->next_ = nullptr;
+            delete temp;
+        }
+    }
+}
+
+HandleBase::HandleBase() {
+    if (!root) {
+        root = new HandleGroup();
+    }
+    object_ = nullptr;
+}
+
+HandleBase::HandleBase(Object* obj) {
+    if (!root) {
+        root = new HandleGroup();
+    }
+    object_ = root->Allocate();
+    root->Write(object_, obj);
+}
+
+HandleBase::HandleBase(const HandleBase& obj) {
+    // No need to check root!=nullptr.
+    // Copy-ctor means HandleBase is at least constructed once before
+    object_ = root->Allocate();
+    root->Write(object_, *obj.object_);
+}
+
+HandleBase::HandleBase(HandleBase&& obj) {
+    object_ = obj.object_;
+    // Destructor will take care of this
+    obj.object_ = nullptr;
+}
+
+void HandleBase::operator= (Object* obj) {
+    if (!object_) {
+        object_ = root->Allocate();
+    }
+    root->Write(object_, obj);
+}
+
+void HandleBase::operator = (const HandleBase& obj) {
+    operator=(obj.operator*());
+}
+
+void HandleBase::operator = (HandleBase&& obj) {
+    std::swap(object_, obj.object_);
+}
+
+HandleBase::~HandleBase() {
+    if (object_) {
+        root->Free(object_);
+    }
 }

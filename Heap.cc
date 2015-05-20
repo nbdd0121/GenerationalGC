@@ -549,6 +549,7 @@ void Heap::MinorGC() {
     Minor_ScanRoot(survivor_from_space);
 
     // Mark. Note that this step will cause some tenured space's objects to be marked as "MARKED"
+    // TODO: This is super inefficient, use a queue to speed it up
     while (
         Mark(eden_space) |
         Mark(survivor_from_space)
