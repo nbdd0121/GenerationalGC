@@ -36,6 +36,7 @@ When you use tagged pointers, make sure you are **NOT** calling virtual function
 - Override `virtual void IterateField(const norlit::gc::FieldIterator&)` and call the iterator with pointer to each managed pointer in the class.
 - Use `norlit::gc::Heap::MinorGC()` or `norlit::gc::Heap::MajorGC()` to trigger garbage collection.
 - Use `norlit::gc::Handle` to manage reference on heap instead of pointers.
+- All allocated heap objects are guaranteed to align on 8 bytes. Tagged pointers are allowed and will not be considered in GC.
 
 ##Currently Problems
  - Marking is inefficient. Currently there is no queue implemented, so a walk through all objects for several times is needed.
