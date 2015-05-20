@@ -57,7 +57,7 @@ class Object {
 
   public:
     Object(Reflection<Object>*);
-    ~Object();
+    virtual ~Object();
 
     // TODO: Implement copy-ctor and move-ctor for stack objects?
     Object(const Object& obj) = delete;

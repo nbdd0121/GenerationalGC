@@ -274,9 +274,7 @@ void Heap::Finialize(MemorySpace* space) {
                 objectPtr < space->End();
                 objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
             if (object->status_ != Status::MARKED) {
-                if (object->reflection_) {
-                    object->reflection_->Finalize(object);
-                }
+                object->~Object();
             }
         }
         space = space->next;
@@ -289,9 +287,7 @@ void Heap::Major_FinalizeLargeObject() {
             node = node->next) {
         Object* object = reinterpret_cast<Object*>(node+1);
         if (object->status_ != Status::MARKED) {
-            if (object->reflection_) {
-                object->reflection_->Finalize(object);
-            }
+            object->~Object();
             object->dest_ = nullptr;
         }
     }

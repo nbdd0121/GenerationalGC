@@ -26,8 +26,6 @@ class Reflection;
 template<>
 class Reflection<Object> {
   public:
-    // Destruct an object
-    virtual void Finalize(Object*) {}
     // Iterate fields for a given object
     virtual void IterateField(Object*, const FieldIterator&) {}
 };
@@ -36,10 +34,6 @@ class Reflection<Object> {
 template<typename T>
 class Reflection: public Reflection<Object> {
   public:
-    // Since we avoid virtual function, we need a seperate function to destruct
-    virtual void Finalize(Object* ptr) override {
-        ((T*)ptr)->~T();
-    }
     virtual void IterateField(Object* ptr, const FieldIterator& iter) override {
         IterateField((T*)ptr, iter);
     }
