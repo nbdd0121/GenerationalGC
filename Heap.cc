@@ -19,7 +19,7 @@ struct Heap::MarkingIterator : public FieldIterator {
         }
         assert(obj->space_ != Space::STACK_SPACE);
         if (obj->status_ == Status::NOT_MARKED) {
-            obj->status_ = Status::MARKED;
+            obj->status_ = Status::MARKING;
         }
     }
 
@@ -128,7 +128,10 @@ void* Heap::Allocate(size_t size) {
         node->next = &large_object_space;
         large_object_space.prev->next = node;
         large_object_space.prev = node;
-        return static_cast<void*>(node+1);
+
+        void* ret = static_cast<void*>(node + 1);
+        debug("A new large object is allocated on %p\n", ret);
+        return ret;
     }
 
     // Set allocating_size so Heap::Initialize can receive info
@@ -180,7 +183,6 @@ void Heap::Initialize(Object* object) {
 
     object->refcount_ = 0;
     object->size_ = allocating_size;
-    object->space_ = Space::EDEN_SPACE;
     object->status_ = Status::NOT_MARKED;
     object->lifetime_ = 0;
     allocating_size = 0;

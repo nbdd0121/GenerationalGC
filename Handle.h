@@ -51,11 +51,11 @@ class Handle: public detail::HandleBase {
         HandleBase::operator =(std::move(h));
     }
 
-    T* operator ->() {
+    T* operator ->() const {
         return static_cast<T*>(HandleBase::operator*());
     }
 
-    operator T*() {
+    operator T*() const {
         return static_cast<T*>(HandleBase::operator*());
     }
 };
