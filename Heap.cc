@@ -573,7 +573,7 @@ void Heap::MinorGC() {
 }
 
 void Heap::MajorGC() {
-    debug("Major GC Triggered\n");
+    debug("----- Major GC -----\n");
     // Use reference count number assigned by root and tenured generation
     Major_ScanHeapRoot();
 

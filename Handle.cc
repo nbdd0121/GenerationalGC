@@ -75,9 +75,9 @@ Object** HandleGroup::Allocate() {
 }
 
 void HandleGroup::Free(Object** ptr) {
-    int offset = ptr - handles_;
+    ptrdiff_t offset = ptr - handles_;
     if (offset >= 0 && offset < static_cast<int>(kHandlesPerGroup)) {
-        *ptr = nullptr;
+        WriteBarrier(ptr, nullptr);
         bitmap_.reset(offset);
         size_--;
     } else {
