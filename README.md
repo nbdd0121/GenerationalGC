@@ -27,6 +27,8 @@ handle->Method(arg0);
 > In most compilers the wrong sample works (these compilers sequence evaluation of arguments before evaluation of this argument).
 > But the C++ specification states the evaluation as unsequenced, so it is undefined behavior and may cause problems.
 
+In method using `this`, make sure that you did not new Object. Such rules apply to new, which returns `this`; therefore, you should never create an object in constructor. If you need to do so, use a helper method (`static T* New();` for example) to do that.
+
 You **SHOULD** use static methods that take `const Handle&` if the method contains actions that might trigger GC, such as new operation.
 
 **DO NOT USE** multi-inheritance. The class data layout can be unexpected, causing errors.
