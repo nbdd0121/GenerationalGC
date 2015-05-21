@@ -84,7 +84,7 @@ class ValueArray : public Object {
 
   public:
     T& At(size_t index) {
-        return static_cast<T*>(slots)[index];
+        return reinterpret_cast<T*>(slots)[index];
     }
 
     size_t Length() {

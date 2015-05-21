@@ -544,7 +544,9 @@ void Heap::Major_CleanLargeObject() {
     LargeObjectSpaceIterator iterator;
     while (iterator.HasNext()) {
         Object* object = iterator.Next();
-        if (object->status_ != Status::MARKED) {
+        if (object->status_ == Status::MARKED) {
+            object->status_ = Status::NOT_MARKED;
+        } else {
             debug("Reclaim Large Object %p\n", object);
             iterator.Remove();
         }

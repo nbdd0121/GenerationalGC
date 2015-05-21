@@ -48,6 +48,7 @@ class Heap {
     static void Major_ScanHeapRoot();
     static void Major_CleanLargeObject();
 
+    // Minor/Major GC indepedent methods
     template<typename I>
     static bool Mark(Iterable<I> iter);
     template<typename I>

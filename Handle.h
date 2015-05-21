@@ -33,9 +33,8 @@ class HandleBase {
 template<typename T>
 class Handle: public detail::HandleBase {
   public:
-    Handle(T* obj) :HandleBase(obj) {
-
-    }
+    Handle() : HandleBase() {}
+    Handle(T* obj) :HandleBase(obj) {}
     Handle(const Handle& h) :HandleBase(h) {}
     Handle(Handle&& h) :HandleBase(std::move(h)) {}
 
@@ -57,6 +56,11 @@ class Handle: public detail::HandleBase {
 
     operator T*() const {
         return static_cast<T*>(HandleBase::operator*());
+    }
+
+    template<typename D>
+    explicit operator D*() const {
+        return static_cast<D*>(operator T*());
     }
 };
 
