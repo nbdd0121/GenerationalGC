@@ -97,16 +97,17 @@ class Heap::MemorySpaceIterator {
     Object* objectPtr;
     Object* objectEnd;
     MemorySpace* space;
+    bool useOriginal;
 
   public:
-    MemorySpaceIterator(MemorySpace* space) {
+    MemorySpaceIterator(MemorySpace* space, bool original = false) :useOriginal(original) {
         LoadSpace(space);
     }
 
     void LoadSpace(MemorySpace* space) {
         this->space = space;
         objectPtr = reinterpret_cast<Object*>(space->Begin());
-        objectEnd = reinterpret_cast<Object*>(space->End());
+        objectEnd = reinterpret_cast<Object*>(useOriginal ? space->OriginalEnd() : space->End());
     }
 
     bool HasNext() {
@@ -199,7 +200,7 @@ class Heap::Iterable {
 
   public:
     template<typename... Args>
-    Iterable(Args... args) : t(std::forward<T>(args)...) {}
+    Iterable(Args&&... args) : t(std::forward<Args>(args)...) {}
     Iterator begin() {
         return this;
     }
@@ -379,7 +380,7 @@ void Heap::Major_ScanHeapRoot() {
 }
 
 template<typename I>
-bool Heap::Generic_Mark(Iterable<I> iter) {
+bool Heap::Mark(Iterable<I> iter) {
     // Classic mark algorithm
     bool modified = false;
     for (Object* object : iter) {
@@ -393,7 +394,8 @@ bool Heap::Generic_Mark(Iterable<I> iter) {
 }
 
 template<typename I>
-void Heap::Generic_Finalize(Iterable<I> iter) {
+void Heap::Finalize(Iterable<I> iter) {
+    // Calling destructors
     for (Object* object : iter) {
         if (object->status_ != Status::MARKED) {
             object->~Object();
@@ -408,22 +410,6 @@ void Heap::NotifyWeakReference(Iterable<I> iter) {
             object->IterateField(WeakRefNotifyIterator{ object });
         }
     }
-}
-
-bool Heap::Mark(MemorySpace* space) {
-    return Generic_Mark<MemorySpaceIterator>({ space });
-}
-
-bool Heap::Major_MarkLargeObject() {
-    return Generic_Mark<LargeObjectSpaceIterator>({});
-}
-
-void Heap::Finialize(MemorySpace* space) {
-    Generic_Finalize<MemorySpaceIterator>({ space });
-}
-
-void Heap::Major_FinalizeLargeObject() {
-    Generic_Finalize<LargeObjectSpaceIterator>({});
 }
 
 void Heap::UpdateReference(MemorySpace* space) {
@@ -630,12 +616,12 @@ void Heap::MinorGC() {
     // Mark. Note that this step will cause some tenured space's objects to be marked as "MARKED"
     // TODO: This is super inefficient, use a queue to speed it up
     while (
-        Mark(eden_space) |
-        Mark(survivor_from_space)
+        Mark<MemorySpaceIterator>(eden_space) |
+        Mark<MemorySpaceIterator>(survivor_from_space)
     );
 
-    Finialize(eden_space);
-    Finialize(survivor_from_space);
+    Finalize<MemorySpaceIterator>(eden_space);
+    Finalize<MemorySpaceIterator>(survivor_from_space);
 
     // In case that we may expand tenured space, we need to save it for
     // Minor_UpdateTenuredReference
@@ -647,9 +633,10 @@ void Heap::MinorGC() {
 
     // Weak references holders, if their referred object is collected, will be notified
     // as Java's Reference queue works
-    NotifyWeakReference<false, MemorySpaceIterator>({eden_space});
-    NotifyWeakReference<false, MemorySpaceIterator>({survivor_from_space});
-    NotifyWeakReference<true, MemorySpaceIterator>({tenured_space});
+    NotifyWeakReference<false, MemorySpaceIterator>(eden_space);
+    NotifyWeakReference<false, MemorySpaceIterator>(survivor_from_space);
+    // OriginalEnd() is required because we already modified the space
+    NotifyWeakReference<true, MemorySpaceIterator>({tenured_space, true});
     NotifyWeakReference<true, LargeObjectSpaceIterator>({});
     NotifyWeakReference<true, StackSpaceIterator>({});
 
@@ -689,17 +676,17 @@ void Heap::MajorGC() {
 
     // Mark
     while (
-        Mark(eden_space) |
-        Mark(survivor_from_space) |
-        Mark(tenured_space) |
-        Major_MarkLargeObject()
+        Mark<MemorySpaceIterator>(eden_space) |
+        Mark<MemorySpaceIterator>(survivor_from_space) |
+        Mark<MemorySpaceIterator>(tenured_space) |
+        Mark<LargeObjectSpaceIterator>({})
     );
 
     // Call destructors
-    Finialize(eden_space);
-    Finialize(survivor_from_space);
-    Finialize(tenured_space);
-    Major_FinalizeLargeObject();
+    Finalize<MemorySpaceIterator>(eden_space);
+    Finalize<MemorySpaceIterator>(survivor_from_space);
+    Finalize<MemorySpaceIterator>(tenured_space);
+    Finalize<LargeObjectSpaceIterator>({});
 
     // We clean tenured space, meaning that we are going to compact it
     tenured_space->SaveOriginal();
@@ -711,9 +698,9 @@ void Heap::MajorGC() {
     SurvivorSpace_CalculateTarget();
     // We do not move large target, and their dest_ is set in Major_FinalizeLargeObject()
 
-    NotifyWeakReference<false, MemorySpaceIterator>({eden_space});
-    NotifyWeakReference<false, MemorySpaceIterator>({survivor_from_space});
-    NotifyWeakReference<false, MemorySpaceIterator>({tenured_space});
+    NotifyWeakReference<false, MemorySpaceIterator>(eden_space);
+    NotifyWeakReference<false, MemorySpaceIterator>(survivor_from_space);
+    NotifyWeakReference<false, MemorySpaceIterator>({tenured_space, true});
     NotifyWeakReference<false, LargeObjectSpaceIterator>({});
     NotifyWeakReference<true, StackSpaceIterator>({});
 

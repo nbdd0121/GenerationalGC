@@ -51,20 +51,15 @@ class Heap {
     static void Major_ScanHeapRoot();
     static void Major_UpdateTenuredReference();
     static void Major_UpdateLargeObjectReference();
-    static bool Major_MarkLargeObject();
-    static void Major_FinalizeLargeObject();
     static void Major_CleanLargeObject();
 
+    template<typename I>
+    static bool Mark(Iterable<I> iter);
+    template<typename I>
+    static void Finalize(Iterable<I> iter);
     template<bool asRoot, typename I>
     static void NotifyWeakReference(Iterable<I> iter);
 
-    template<typename I>
-    static bool Generic_Mark(Iterable<I> iter);
-    template<typename I>
-    static void Generic_Finalize(Iterable<I> iter);
-
-    static void Finialize(MemorySpace* space);
-    static bool Mark(MemorySpace* space);
     static void UpdateReference(MemorySpace* space);
     static void MemorySpace_Copy(MemorySpace* space);
     static void MemorySpace_Move(MemorySpace* space);
