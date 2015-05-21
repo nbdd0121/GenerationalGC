@@ -13,7 +13,7 @@ class Heap {
     struct UpdateIterator;
     struct IncRefIterator;
     struct DecRefIterator;
-    class MemorySpaceWalker;
+    class MemorySpaceIterator;
 
     static const size_t LARGE_OBJECT_THRESHOLD = 4096;
     static const size_t MEMORY_SPACE_SIZE = 1024 * 1024;
