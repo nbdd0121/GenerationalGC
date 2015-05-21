@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <algorithm>
 
 using namespace norlit::gc;
@@ -23,8 +24,7 @@ struct Heap::MarkingIterator : public FieldIterator {
         }
     }
 
-    virtual void operator()(Object** field, decltype(weak)) const {
-    }
+    virtual void operator()(Object** field, decltype(weak)) const {}
 };
 
 struct Heap::UpdateIterator : public FieldIterator {
@@ -65,7 +65,62 @@ struct Heap::DecRefIterator : public FieldIterator {
         obj->DecRefCount();
     }
 
-    virtual void operator()(Object** field, decltype(weak)) const {
+    virtual void operator()(Object** field, decltype(weak)) const {}
+};
+
+// In order to make MemorySpace implementation simple and Object-detail free,
+// we make the walker part of implementation of Heap.
+// The heap uses Java-style iterator model with a glue layer make it work with
+// c++11 range-based for loop
+class Heap::MemorySpaceWalker {
+    // Object pointer
+    Object* objectPtr;
+    MemorySpace* space;
+
+    // Glue layer
+    class Iterator {
+        MemorySpaceWalker* walker;
+      public:
+        Iterator(MemorySpaceWalker* walker) :walker(walker) {
+        }
+
+        bool operator !=(const Iterator&) {
+            return walker->HasNext();
+        }
+
+        void operator ++() {
+            walker->Next();
+        }
+
+        Object* operator *() {
+            return walker->Get();
+        }
+    };
+
+  public:
+    MemorySpaceWalker(MemorySpace* space):
+        space(space) {
+        objectPtr = reinterpret_cast<Object*>(space->Begin());
+    }
+
+    bool HasNext() {
+        return reinterpret_cast<char*>(objectPtr) < space->End();
+    }
+
+    void Next() {
+        objectPtr = reinterpret_cast<Object*>(reinterpret_cast<char*>(objectPtr)+objectPtr->size_);
+    }
+
+    Object* Get() {
+        return objectPtr;
+    }
+
+    Iterator begin() {
+        return this;
+    }
+
+    Iterator end() {
+        return this;
     }
 };
 
@@ -81,6 +136,7 @@ MemorySpace* Heap::survivor_to_space;
 MemorySpace* Heap::tenured_space;
 uint32_t Heap::allocating_size = 0;
 bool Heap::full_gc_suggested = false;
+uintptr_t Heap::no_gc_counter = 0;
 
 void Heap::GlobalInitialize() {
     eden_space = MemorySpace::New(MEMORY_SPACE_SIZE);
@@ -121,7 +177,8 @@ void* Heap::Allocate(size_t size) {
     allocating_size = static_cast<uint32_t>(size);
 
     if (size > LARGE_OBJECT_THRESHOLD) {
-        if (full_gc_suggested) {
+        // We cannot start GC if no_gc_counter is non-zero
+        if (!no_gc_counter && full_gc_suggested) {
             MajorGC();
             full_gc_suggested = false;
         } else {
@@ -142,15 +199,22 @@ void* Heap::Allocate(size_t size) {
     void* ret = eden_space->Allocate(size);
     if (!ret) {
         debug("Reason: Eden space out of memory\n");
-        if (full_gc_suggested) {
-            MajorGC();
-            full_gc_suggested = false;
+        if (!no_gc_counter) {
+            if (full_gc_suggested) {
+                MajorGC();
+                full_gc_suggested = false;
+            } else {
+                MinorGC();
+            }
+            ret = eden_space->Allocate(size);
+            // This should never happen. Eden space is already cleared
+            assert(ret);
         } else {
-            MinorGC();
+            // Since Survivor Space can extend,
+            // we need to allocate them directly in survivor space
+            ret = survivor_from_space->Allocate(size, true);
+            debug("GC cannot trigger. Allocate on Survivor Space\n");
         }
-        ret = eden_space->Allocate(size);
-        // This should never happen. Eden space is already cleared
-        assert(ret);
     }
     debug("A new object is allocated on %p\n", ret);
     return ret;
@@ -180,8 +244,16 @@ void Heap::Initialize(Object* object) {
         // Large object will never be moved
         object->dest_ = object;
         object->space_ = Space::LARGE_OBJECT_SPACE;
-    } else {
+    } else if (
+        !no_gc_counter || (
+            // If no_gc_counter is true we need to have an extra check to see if
+            // object is in eden space
+            reinterpret_cast<char*>(object) >= eden_space->Begin() &&
+            reinterpret_cast<char*>(object) < eden_space->End()
+        )) {
         object->space_ = Space::EDEN_SPACE;
+    } else {
+        object->space_ = Space::SURVIVOR_SPACE;
     }
 
     object->refcount_ = 0;
@@ -209,12 +281,8 @@ void Heap::UntrackStackObject(Object* object) {
 void Heap::Minor_ScanRoot(MemorySpace* space) {
     // In minor GC, the "root" are actually objects referenced by
     // real roots and tenured object
-    Object* object;
-    char* objectPtr;
     do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->End();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+        for (Object* object : MemorySpaceWalker{space}) {
             if (object->refcount_) {
                 object->status_ = Status::MARKING;
             }
@@ -235,12 +303,8 @@ void Heap::Major_ScanHeapRoot() {
 bool Heap::Mark(MemorySpace* space) {
     // Classic mark algorithm
     bool modified = false;
-    Object* object;
-    char* objectPtr;
     do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->End();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+        for (Object* object : MemorySpaceWalker{ space }) {
             if (object->status_ == Status::MARKING) {
                 modified = true;
                 object->IterateField(MarkingIterator{});
@@ -269,12 +333,8 @@ bool Heap::Major_MarkLargeObject() {
 
 void Heap::Finialize(MemorySpace* space) {
     // Call destructors
-    Object* object;
-    char* objectPtr;
     do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->End();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+        for (Object* object : MemorySpaceWalker{ space }) {
             if (object->status_ != Status::MARKED) {
                 object->~Object();
             }
@@ -297,12 +357,8 @@ void Heap::Major_FinalizeLargeObject() {
 
 void Heap::UpdateReference(MemorySpace* space) {
     // Update reference using object.dest_
-    Object* object;
-    char* objectPtr;
     do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->End();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+        for (Object* object : MemorySpaceWalker{ space }) {
             if (object->status_ == Status::MARKED) {
                 object->IterateField(UpdateIterator{});
             }
@@ -374,12 +430,8 @@ void Heap::Major_UpdateLargeObjectReference() {
 
 void Heap::MemorySpace_Copy(MemorySpace* space) {
     // Used for Eden Space and Survivor Space (mark-copy)
-    Object* object;
-    char* objectPtr;
     do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->End();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+        for (Object* object : MemorySpaceWalker{ space }) {
             if (object->status_ == Status::MARKED) {
                 object->status_ = Status::NOT_MARKED;
                 memcpy(object->dest_, object, object->size_);
@@ -419,11 +471,7 @@ void Heap::UpdateStackReference() {
 void Heap::EdenSpace_CalculateTarget() {
     // Calculate target address for Eden Space.
     // This is simple because the only target is Survivor Space
-    Object* object;
-    char* objectPtr;
-    for (objectPtr = eden_space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-            objectPtr < eden_space->End();
-            objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+    for (Object* object : MemorySpaceWalker{ eden_space }) {
         if (object->status_ == Status::MARKED) {
             // All Eden Space objects that survives a minor GC will be moved to survivor space
             object->dest_ = static_cast<Object*>(
@@ -455,12 +503,8 @@ void Heap::PromoteToTenuredSpace(Object *object) {
 
 void Heap::SurvivorSpace_CalculateTarget() {
     MemorySpace* space = survivor_from_space;
-    Object* object;
-    char* objectPtr;
     do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->End();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
+        for (Object* object : MemorySpaceWalker{ space }) {
             if (object->status_ == Status::MARKED) {
                 // Promote an object that survives many times of GC
                 if (object->lifetime_ > TENURED_SPACE_THRESHOLD) {
@@ -523,6 +567,9 @@ void Heap::Major_CleanLargeObject() {
 }
 
 void Heap::MinorGC() {
+    if (no_gc_counter) {
+        throw std::runtime_error{"Minor GC triggered in NoGC scope"};
+    }
     debug("----- Minor GC -----\n");
     // Use reference count number assigned by root and tenured generation
     Minor_ScanRoot(eden_space);
@@ -573,6 +620,9 @@ void Heap::MinorGC() {
 }
 
 void Heap::MajorGC() {
+    if (no_gc_counter) {
+        throw std::runtime_error{ "Major GC triggered in NoGC scope" };
+    }
     debug("----- Major GC -----\n");
     // Use reference count number assigned by root and tenured generation
     Major_ScanHeapRoot();

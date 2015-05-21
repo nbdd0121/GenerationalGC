@@ -24,6 +24,11 @@ class FieldIterator {
     void operator()(T** field) const {
         operator()(reinterpret_cast<Object**>(field));
     }
+
+    template<typename T>
+    void operator()(T** field, decltype(weak)) const {
+        operator()(reinterpret_cast<Object**>(field), weak);
+    }
 };
 
 class Object {

@@ -13,6 +13,7 @@ class Heap {
     struct UpdateIterator;
     struct IncRefIterator;
     struct DecRefIterator;
+    class MemorySpaceWalker;
 
     static const size_t LARGE_OBJECT_THRESHOLD = 4096;
     static const size_t MEMORY_SPACE_SIZE = 1024 * 1024;
@@ -33,6 +34,7 @@ class Heap {
     static uint32_t allocating_size;
     // Suggest a full gc is needed. Set when tenured space is expanded
     static bool full_gc_suggested;
+    static uintptr_t no_gc_counter;
 
     static void GlobalInitialize();
     static void GlobalDestroy();
@@ -70,6 +72,19 @@ class Heap {
     static void MajorGC();
 
     friend class Object;
+    friend class NoGC;
+};
+
+class NoGC {
+  public:
+    NoGC() {
+        Heap::no_gc_counter++;
+    }
+    ~NoGC() {
+        Heap::no_gc_counter--;
+    }
+    NoGC(const NoGC&) = delete;
+    void operator =(const NoGC&) = delete;
 };
 
 }
