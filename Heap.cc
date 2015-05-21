@@ -399,6 +399,9 @@ void Heap::Finalize(Iterable<I> iter) {
     for (Object* object : iter) {
         if (object->status_ != Status::MARKED) {
             object->~Object();
+            // We set object->dest_ here because LargeObjectSpace
+            // do not have a pass that helps set dest_ field.
+            object->dest_ = nullptr;
         }
     }
 }
@@ -527,7 +530,7 @@ void Heap::EdenSpace_CalculateTarget() {
             object->lifetime_++;
         } else {
             debug("Reclaim %p\n", object);
-            object->dest_ = nullptr;
+            // dest_ is set in Finalize
         }
     }
 }
@@ -563,7 +566,7 @@ void Heap::SurvivorSpace_CalculateTarget() {
             }
         } else {
             debug("Reclaim %p\n", object);
-            object->dest_ = nullptr;
+            // dest_ is set in Finalize
         }
     }
 }
@@ -586,7 +589,7 @@ void Heap::TenuredSpace_CalculateTarget() {
                 // allow referenced young objects to be recycled in minor GC
                 object->IterateField(DecRefIterator{});
                 debug("Reclaim Tenured %p\n", object);
-                object->dest_ = nullptr;
+                // dest_ is set in Finalize
             }
         }
         space = space->next;
@@ -696,7 +699,7 @@ void Heap::MajorGC() {
     EdenSpace_CalculateTarget();
     TenuredSpace_CalculateTarget();
     SurvivorSpace_CalculateTarget();
-    // We do not move large target, and their dest_ is set in Major_FinalizeLargeObject()
+    // We do not move large target, and their dest_ is set in Finalize<LargeObjectSpaceIterator>({})
 
     NotifyWeakReference<false, MemorySpaceIterator>(eden_space);
     NotifyWeakReference<false, MemorySpaceIterator>(survivor_from_space);
