@@ -125,6 +125,9 @@ class Heap::MemorySpaceIterator {
 
     Object* Next() {
         Object* ret = objectPtr;
+        // This is similar to prefetch.
+        // When object is destroyed, the pointer already points to the next block
+        // This made it possible to use iterator in mark-compact
         objectPtr = reinterpret_cast<Object*>(reinterpret_cast<char*>(objectPtr)+objectPtr->size_);
         return ret;
     }
@@ -372,9 +375,7 @@ void Heap::Minor_ScanRoot(MemorySpace* space) {
 
 void Heap::Major_ScanHeapRoot() {
     // In major GC, the "root" are objects referenced by real roots
-    for (Object* object = stack_space.stack_.next_;
-            object != &stack_space;
-            object = object->stack_.next_) {
+    for (Object* object : Iterable<StackSpaceIterator> {}) {
         object->IterateField(MarkingIterator{});
     }
 }
@@ -428,18 +429,10 @@ void Heap::Minor_UpdateTenuredReference() {
     // We use OriginalEnd here, since we might promote a object in previous calls
     // And we reset object.status_, because they might be changed by MarkingIterator
     // Since it is minor GC, tenured objects are not reclaimed, so object.status_ is not checked
-    MemorySpace* space = tenured_space;
-    Object* object;
-    char* objectPtr;
-    do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->OriginalEnd();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
-            object->status_ = Status::NOT_MARKED;
-            object->IterateField(UpdateIterator{});
-        }
-        space = space->next;
-    } while (space);
+    for (Object* object : Iterable<MemorySpaceIterator> {tenured_space, true}) {
+        object->status_ = Status::NOT_MARKED;
+        object->IterateField(UpdateIterator{});
+    }
 }
 
 void Heap::Minor_UpdateLargeObjectReference() {
@@ -455,19 +448,11 @@ void Heap::Major_UpdateTenuredReference() {
     // We need to check object.status_ now because some of tenured objects might
     // be collected. We do not reset object.status_ because they are used and reseted
     // by following calls
-    MemorySpace* space = tenured_space;
-    Object* object;
-    char* objectPtr;
-    do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->OriginalEnd();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
-            if (object->status_ == Status::MARKED) {
-                object->IterateField(UpdateIterator{});
-            }
+    for (Object* object : Iterable<MemorySpaceIterator> {tenured_space, true}) {
+        if (object->status_ == Status::MARKED) {
+            object->IterateField(UpdateIterator{});
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 void Heap::Major_UpdateLargeObjectReference() {
@@ -489,22 +474,14 @@ void Heap::MemorySpace_Copy(MemorySpace* space) {
     }
 }
 
-
 void Heap::MemorySpace_Move(MemorySpace* space) {
     // Used for Tenured Space (mark-compact)
-    Object* object;
-    char* objectPtr, *prefetch;
-    do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr), prefetch = objectPtr+object->size_;
-                objectPtr < space->OriginalEnd();
-                objectPtr = prefetch, object = reinterpret_cast<Object*>(objectPtr), prefetch = objectPtr + object->size_) {
-            if (object->status_ == Status::MARKED) {
-                object->status_ = Status::NOT_MARKED;
-                memmove(object->dest_, object, object->size_);
-            }
+    for (Object* object : Iterable<MemorySpaceIterator> { space, true }) {
+        if (object->status_ == Status::MARKED) {
+            object->status_ = Status::NOT_MARKED;
+            memmove(object->dest_, object, object->size_);
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 void Heap::UpdateStackReference() {
@@ -572,28 +549,20 @@ void Heap::SurvivorSpace_CalculateTarget() {
 }
 
 void Heap::TenuredSpace_CalculateTarget() {
-    MemorySpace* space = tenured_space;
-    Object* object;
-    char* objectPtr;
-    do {
-        for (objectPtr = space->Begin(), object = reinterpret_cast<Object*>(objectPtr);
-                objectPtr < space->OriginalEnd();
-                objectPtr += object->size_, object = reinterpret_cast<Object*>(objectPtr)) {
-            if (object->status_ == Status::MARKED) {
-                object->dest_ = static_cast<Object*>(
-                                    tenured_space->Allocate(object->size_, true)
-                                );
-                debug("Object %p [Tenured] is moved to %p [Tenured]\n", object, object->dest_);
-            } else {
-                // When tenured objects are collected, decrease ref to
-                // allow referenced young objects to be recycled in minor GC
-                object->IterateField(DecRefIterator{});
-                debug("Reclaim Tenured %p\n", object);
-                // dest_ is set in Finalize
-            }
+    for (Object* object : Iterable < MemorySpaceIterator > { tenured_space, true }) {
+        if (object->status_ == Status::MARKED) {
+            object->dest_ = static_cast<Object*>(
+                                tenured_space->Allocate(object->size_, true)
+                            );
+            debug("Object %p [Tenured] is moved to %p [Tenured]\n", object, object->dest_);
+        } else {
+            // When tenured objects are collected, decrease ref to
+            // allow referenced young objects to be recycled in minor GC
+            object->IterateField(DecRefIterator{});
+            debug("Reclaim Tenured %p\n", object);
+            // dest_ is set in Finalize
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 void Heap::Major_CleanLargeObject() {
