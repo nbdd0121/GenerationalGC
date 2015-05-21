@@ -45,12 +45,7 @@ class Heap {
     static void GlobalDestroy();
 
     static void Minor_ScanRoot(MemorySpace* space);
-    static void Minor_UpdateTenuredReference();
-    static void Minor_UpdateLargeObjectReference();
-
     static void Major_ScanHeapRoot();
-    static void Major_UpdateTenuredReference();
-    static void Major_UpdateLargeObjectReference();
     static void Major_CleanLargeObject();
 
     template<typename I>
@@ -60,7 +55,13 @@ class Heap {
     template<bool asRoot, typename I>
     static void NotifyWeakReference(Iterable<I> iter);
 
-    static void UpdateReference(MemorySpace* space);
+    static void UpdateStackReference();
+    template<typename I>
+    static void UpdateNonRootReference(Iterable<I> iter);
+    template<typename I>
+    static void UpdateNonStackRootReference(Iterable<I> iter);
+
+
     static void MemorySpace_Copy(MemorySpace* space);
     static void MemorySpace_Move(MemorySpace* space);
 
@@ -69,8 +70,6 @@ class Heap {
     static void EdenSpace_CalculateTarget();
     static void SurvivorSpace_CalculateTarget();
     static void TenuredSpace_CalculateTarget();
-
-    static void UpdateStackReference();
 
     static void UntrackStackObject(Object* object);
     static void Initialize(Object* object);

@@ -81,6 +81,9 @@ struct Heap::WeakRefNotifyIterator : public FieldIterator {
             return;
         }
         assert(obj->space_ != Space::STACK_SPACE);
+        // We judge on dest_ instead of marking status,
+        // because otherwise Stack Space -> Tenured Space weak reference
+        // will be regarded as collected weak reference
         if (!obj->dest_) {
             *field = nullptr;
             target->NotifyWeakReferenceCollected(field);
@@ -245,9 +248,11 @@ void Heap::GlobalDestroy() {
     tenured_space->Destroy();
 
     // Destroy Large Object Space
-    for (LargeObjectSpaceIterator iter;
-            iter.HasNext();
-            iter.Next(), iter.Remove());
+    LargeObjectSpaceIterator iter;
+    while (iter.HasNext()) {
+        iter.Next();
+        iter.Remove();
+    }
 }
 
 void* Heap::Allocate(size_t size) {
@@ -416,51 +421,23 @@ void Heap::NotifyWeakReference(Iterable<I> iter) {
     }
 }
 
-void Heap::UpdateReference(MemorySpace* space) {
+template<typename I>
+void Heap::UpdateNonRootReference(Iterable<I> iter) {
     // Update reference using object.dest_
-    for (Object* object : Iterable<MemorySpaceIterator> { space }) {
+    for (Object* object : iter) {
         if (object->status_ == Status::MARKED) {
             object->IterateField(UpdateIterator{});
         }
     }
 }
 
-void Heap::Minor_UpdateTenuredReference() {
-    // We use OriginalEnd here, since we might promote a object in previous calls
-    // And we reset object.status_, because they might be changed by MarkingIterator
-    // Since it is minor GC, tenured objects are not reclaimed, so object.status_ is not checked
-    for (Object* object : Iterable<MemorySpaceIterator> {tenured_space, true}) {
+template<typename I>
+void Heap::UpdateNonStackRootReference(Iterable<I> iter) {
+    // We reset object.status_, because they might be changed by MarkingIterator
+    // Since it is minor GC, tenured/large objects are not reclaimed, so object.status_ is not checked
+    for (Object* object : iter) {
         object->status_ = Status::NOT_MARKED;
         object->IterateField(UpdateIterator{});
-    }
-}
-
-void Heap::Minor_UpdateLargeObjectReference() {
-    // Similar to Tenured Space, but we iterate through large object space here
-    for (Object* object : Iterable<LargeObjectSpaceIterator> {}) {
-        object->status_ = Status::NOT_MARKED;
-        object->IterateField(UpdateIterator{});
-    }
-}
-
-void Heap::Major_UpdateTenuredReference() {
-    // In major GC, we also use OriginalEnd because we move & promote objects
-    // We need to check object.status_ now because some of tenured objects might
-    // be collected. We do not reset object.status_ because they are used and reseted
-    // by following calls
-    for (Object* object : Iterable<MemorySpaceIterator> {tenured_space, true}) {
-        if (object->status_ == Status::MARKED) {
-            object->IterateField(UpdateIterator{});
-        }
-    }
-}
-
-void Heap::Major_UpdateLargeObjectReference() {
-    // Similar to Tenured Space, but we iterate through large object space here
-    for (Object* object : Iterable<LargeObjectSpaceIterator> {}) {
-        if (object->status_ == Status::MARKED) {
-            object->IterateField(UpdateIterator{});
-        }
     }
 }
 
@@ -486,9 +463,7 @@ void Heap::MemorySpace_Move(MemorySpace* space) {
 
 void Heap::UpdateStackReference() {
     // Update references on stack
-    for (Object* object = stack_space.stack_.next_;
-            object != &stack_space;
-            object = object->stack_.next_) {
+    for (Object* object : Iterable<StackSpaceIterator> {}) {
         object->IterateField(UpdateIterator{});
     }
 }
@@ -614,11 +589,11 @@ void Heap::MinorGC() {
 
     // Update stack and tenured space reference
     UpdateStackReference();
-    UpdateReference(eden_space);
-    UpdateReference(survivor_from_space);
+    UpdateNonRootReference<MemorySpaceIterator>(eden_space);
+    UpdateNonRootReference<MemorySpaceIterator>(survivor_from_space);
     // We clean the mark of "MARKED" in this step
-    Minor_UpdateTenuredReference();
-    Minor_UpdateLargeObjectReference();
+    UpdateNonStackRootReference<MemorySpaceIterator>({ tenured_space, true });
+    UpdateNonStackRootReference<LargeObjectSpaceIterator>({});
 
     // Copy
     MemorySpace_Copy(eden_space);
@@ -678,10 +653,10 @@ void Heap::MajorGC() {
 
     // Update stack and tenured space reference
     UpdateStackReference();
-    UpdateReference(eden_space);
-    UpdateReference(survivor_from_space);
-    Major_UpdateTenuredReference();
-    Major_UpdateLargeObjectReference();
+    UpdateNonRootReference<MemorySpaceIterator>(eden_space);
+    UpdateNonRootReference<MemorySpaceIterator>(survivor_from_space);
+    UpdateNonRootReference<MemorySpaceIterator>({ tenured_space, true });
+    UpdateNonRootReference<LargeObjectSpaceIterator>({});
 
     // Copy
     MemorySpace_Copy(eden_space);
