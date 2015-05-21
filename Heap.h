@@ -13,7 +13,12 @@ class Heap {
     struct UpdateIterator;
     struct IncRefIterator;
     struct DecRefIterator;
+    struct WeakRefNotifyIterator;
+    template<typename T>
+    class Iterable;
+    class StackSpaceIterator;
     class MemorySpaceIterator;
+    class LargeObjectSpaceIterator;
 
     static const size_t LARGE_OBJECT_THRESHOLD = 4096;
     static const size_t MEMORY_SPACE_SIZE = 1024 * 1024;
@@ -49,6 +54,14 @@ class Heap {
     static bool Major_MarkLargeObject();
     static void Major_FinalizeLargeObject();
     static void Major_CleanLargeObject();
+
+    template<bool asRoot, typename I>
+    static void NotifyWeakReference(Iterable<I> iter);
+
+    template<typename I>
+    static bool Generic_Mark(Iterable<I> iter);
+    template<typename I>
+    static void Generic_Finalize(Iterable<I> iter);
 
     static void Finialize(MemorySpace* space);
     static bool Mark(MemorySpace* space);

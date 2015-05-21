@@ -69,6 +69,7 @@ class Object {
     inline void WriteBarrier(T** slot, T* data);
 
     virtual void IterateField(const FieldIterator&);
+    virtual void NotifyWeakReferenceCollected(Object** slot);
 
   public:
     Object();

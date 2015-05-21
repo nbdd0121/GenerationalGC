@@ -40,6 +40,10 @@ void Object::IterateField(const FieldIterator& iter) {
 
 }
 
+void Object::NotifyWeakReferenceCollected(Object** slot) {
+
+}
+
 void* Object::operator new(size_t size) {
     return Heap::Allocate(size);
 }

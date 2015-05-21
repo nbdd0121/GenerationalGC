@@ -3,11 +3,11 @@
 using namespace norlit::gc;
 using namespace norlit::gc::detail;
 
-void* ArrayBase::operator new(size_t size, size_t length) {
+void* ArrayBase::operator new(size_t size, size_t length, bool) {
     return Object::operator new(size + sizeof(Object*) * (length - 1));
 }
 
-void ArrayBase::operator delete(void*, size_t) {
+void ArrayBase::operator delete(void*, size_t, bool) {
     assert(0);
 }
 

@@ -13,8 +13,9 @@ class ArrayBase: public Object {
     Object* slots[1];
   protected:
     static void* operator new(size_t size) = delete;
-    static void* operator new(size_t size, size_t length);
-    static void operator delete(void*, size_t);
+    static void* operator new(size_t size, size_t length, bool);
+    static void operator delete(void*, size_t, bool);
+    using Object::operator delete;
 
     ArrayBase(size_t length);
 
@@ -51,7 +52,7 @@ class Array : public detail::ArrayBase {
     }
 
     static Handle<Array> New(size_t length) {
-        return new(length)Array(length);
+        return new(length, false)Array(length);
     }
 };
 
@@ -61,12 +62,13 @@ class ValueArray : public Object {
     char slots[1];
   protected:
     static void* operator new(size_t size) = delete;
-    static void* operator new(size_t size, size_t length) {
+    static void* operator new(size_t size, size_t length, bool) {
         return Object::operator new(size + sizeof(T) * length);
     }
-    static void operator delete(void*, size_t) {
+    static void operator delete(void*, size_t, bool) {
         assert(0);
     }
+    using Object::operator delete;
 
     ValueArray(size_t length) :length(length) {
         for (size_t i = 0; i < length; i++) {
@@ -90,7 +92,7 @@ class ValueArray : public Object {
     }
 
     static Handle<ValueArray> New(size_t length) {
-        return new(length)ValueArray(length);
+        return new(length, false)ValueArray(length);
     }
 };
 

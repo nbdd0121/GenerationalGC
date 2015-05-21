@@ -68,62 +68,145 @@ struct Heap::DecRefIterator : public FieldIterator {
     virtual void operator()(Object** field, decltype(weak)) const {}
 };
 
+struct Heap::WeakRefNotifyIterator : public FieldIterator {
+    Object* target;
+
+    WeakRefNotifyIterator(Object* target) :target(target) {}
+
+    virtual void operator()(Object** field) const {}
+
+    virtual void operator()(Object** field, decltype(weak)) const {
+        Object* obj = *field;
+        if (!obj || obj->IsTagged()) {
+            return;
+        }
+        assert(obj->space_ != Space::STACK_SPACE);
+        if (!obj->dest_) {
+            *field = nullptr;
+            target->NotifyWeakReferenceCollected(field);
+        }
+    }
+};
+
 // In order to make MemorySpace implementation simple and Object-detail free,
 // we make the walker part of implementation of Heap.
 // The heap uses Java-style iterator model with a glue layer make it work with
 // c++11 range-based for loop
-class Heap::MemorySpaceWalker {
+class Heap::MemorySpaceIterator {
     // Object pointer
     Object* objectPtr;
+    Object* objectEnd;
     MemorySpace* space;
 
-    // Glue layer
+  public:
+    MemorySpaceIterator(MemorySpace* space) {
+        LoadSpace(space);
+    }
+
+    void LoadSpace(MemorySpace* space) {
+        this->space = space;
+        objectPtr = reinterpret_cast<Object*>(space->Begin());
+        objectEnd = reinterpret_cast<Object*>(space->End());
+    }
+
+    bool HasNext() {
+        if (objectPtr < objectEnd) {
+            return true;
+        }
+        while (space->next) {
+            LoadSpace(space->next);
+            if (objectPtr < objectEnd) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    Object* Next() {
+        Object* ret = objectPtr;
+        objectPtr = reinterpret_cast<Object*>(reinterpret_cast<char*>(objectPtr)+objectPtr->size_);
+        return ret;
+    }
+};
+
+class Heap::StackSpaceIterator {
+    // Use of prefetch here allows node to be deleted during iteration
+    Object* next;
+
+  public:
+    StackSpaceIterator() {
+        next = stack_space.stack_.next_;
+    }
+
+    bool HasNext() {
+        return next != &stack_space;
+    }
+
+    Object* Next() {
+        Object* ret = next;
+        next = next->stack_.next_;
+        return ret;
+    }
+
+};
+
+class Heap::LargeObjectSpaceIterator {
+    // Use of prefetch here allows node to be deleted during iteration
+    LargeObjectNode* current;
+    LargeObjectNode* next;
+
+  public:
+    LargeObjectSpaceIterator() {
+        current = nullptr;
+        next = large_object_space.next;
+    }
+
+    bool HasNext() {
+        return next != &large_object_space;
+    }
+
+    Object* Next() {
+        current = next;
+        next = current->next;
+        return reinterpret_cast<Object*>(current + 1);
+    }
+
+    // Remove a large object from queue and free it
+    void Remove() {
+        current->prev->next = next;
+        next->prev = current->prev;
+        Platform::Free(current, sizeof(LargeObjectNode) + reinterpret_cast<Object*>(current + 1)->size_);
+        current = nullptr;
+    }
+};
+
+template<typename T>
+class Heap::Iterable {
+    T t;
+
     class Iterator {
-        MemorySpaceWalker* walker;
+        Iterable* iter;
       public:
-        Iterator(MemorySpaceWalker* walker) :walker(walker) {
-        }
-
+        Iterator(Iterable* iter) :iter(iter) {}
         bool operator !=(const Iterator&) {
-            return walker->HasNext();
+            return iter->t.HasNext();
         }
-
-        void operator ++() {
-            walker->Next();
-        }
-
+        void operator ++() {}
         Object* operator *() {
-            return walker->Get();
+            return iter->t.Next();
         }
     };
 
   public:
-    MemorySpaceWalker(MemorySpace* space):
-        space(space) {
-        objectPtr = reinterpret_cast<Object*>(space->Begin());
-    }
-
-    bool HasNext() {
-        return reinterpret_cast<char*>(objectPtr) < space->End();
-    }
-
-    void Next() {
-        objectPtr = reinterpret_cast<Object*>(reinterpret_cast<char*>(objectPtr)+objectPtr->size_);
-    }
-
-    Object* Get() {
-        return objectPtr;
-    }
-
+    template<typename... Args>
+    Iterable(Args... args) : t(std::forward<T>(args)...) {}
     Iterator begin() {
         return this;
     }
-
     Iterator end() {
         return this;
     }
 };
-
 
 Object Heap::stack_space{};
 Heap::LargeObjectNode Heap::large_object_space{
@@ -156,13 +239,11 @@ void Heap::GlobalDestroy() {
     survivor_from_space->Destroy();
     survivor_to_space->Destroy();
     tenured_space->Destroy();
+
     // Destroy Large Object Space
-    for (LargeObjectNode* node = large_object_space.next, *prefetch = node->next;
-            node != &large_object_space;
-            node = prefetch, prefetch = node->next) {
-        Object* object = reinterpret_cast<Object*>(node + 1);
-        Platform::Free(node, sizeof(LargeObjectNode) + object->size_);
-    }
+    for (LargeObjectSpaceIterator iter;
+            iter.HasNext();
+            iter.Next(), iter.Remove());
 }
 
 void* Heap::Allocate(size_t size) {
@@ -281,14 +362,11 @@ void Heap::UntrackStackObject(Object* object) {
 void Heap::Minor_ScanRoot(MemorySpace* space) {
     // In minor GC, the "root" are actually objects referenced by
     // real roots and tenured object
-    do {
-        for (Object* object : MemorySpaceWalker{space}) {
-            if (object->refcount_) {
-                object->status_ = Status::MARKING;
-            }
+    for (Object* object : Iterable<MemorySpaceIterator> {space}) {
+        if (object->refcount_) {
+            object->status_ = Status::MARKING;
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 void Heap::Major_ScanHeapRoot() {
@@ -300,28 +378,11 @@ void Heap::Major_ScanHeapRoot() {
     }
 }
 
-bool Heap::Mark(MemorySpace* space) {
+template<typename I>
+bool Heap::Generic_Mark(Iterable<I> iter) {
     // Classic mark algorithm
     bool modified = false;
-    do {
-        for (Object* object : MemorySpaceWalker{ space }) {
-            if (object->status_ == Status::MARKING) {
-                modified = true;
-                object->IterateField(MarkingIterator{});
-                object->status_ = Status::MARKED;
-            }
-        }
-        space = space->next;
-    } while (space);
-    return modified;
-}
-
-bool Heap::Major_MarkLargeObject() {
-    bool modified = false;
-    for (LargeObjectNode* node = large_object_space.next;
-            node != &large_object_space;
-            node = node->next) {
-        Object* object = reinterpret_cast<Object*>(node+1);
+    for (Object* object : iter) {
         if (object->status_ == Status::MARKING) {
             modified = true;
             object->IterateField(MarkingIterator{});
@@ -331,40 +392,47 @@ bool Heap::Major_MarkLargeObject() {
     return modified;
 }
 
-void Heap::Finialize(MemorySpace* space) {
-    // Call destructors
-    do {
-        for (Object* object : MemorySpaceWalker{ space }) {
-            if (object->status_ != Status::MARKED) {
-                object->~Object();
-            }
-        }
-        space = space->next;
-    } while (space);
-}
-
-void Heap::Major_FinalizeLargeObject() {
-    for (LargeObjectNode* node = large_object_space.next;
-            node != &large_object_space;
-            node = node->next) {
-        Object* object = reinterpret_cast<Object*>(node+1);
+template<typename I>
+void Heap::Generic_Finalize(Iterable<I> iter) {
+    for (Object* object : iter) {
         if (object->status_ != Status::MARKED) {
             object->~Object();
-            object->dest_ = nullptr;
         }
     }
 }
 
+template<bool asRoot, typename I>
+void Heap::NotifyWeakReference(Iterable<I> iter) {
+    for (Object* object : iter) {
+        if (asRoot || object->status_ == Status::MARKED) {
+            object->IterateField(WeakRefNotifyIterator{ object });
+        }
+    }
+}
+
+bool Heap::Mark(MemorySpace* space) {
+    return Generic_Mark<MemorySpaceIterator>({ space });
+}
+
+bool Heap::Major_MarkLargeObject() {
+    return Generic_Mark<LargeObjectSpaceIterator>({});
+}
+
+void Heap::Finialize(MemorySpace* space) {
+    Generic_Finalize<MemorySpaceIterator>({ space });
+}
+
+void Heap::Major_FinalizeLargeObject() {
+    Generic_Finalize<LargeObjectSpaceIterator>({});
+}
+
 void Heap::UpdateReference(MemorySpace* space) {
     // Update reference using object.dest_
-    do {
-        for (Object* object : MemorySpaceWalker{ space }) {
-            if (object->status_ == Status::MARKED) {
-                object->IterateField(UpdateIterator{});
-            }
+    for (Object* object : Iterable<MemorySpaceIterator> { space }) {
+        if (object->status_ == Status::MARKED) {
+            object->IterateField(UpdateIterator{});
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 void Heap::Minor_UpdateTenuredReference() {
@@ -387,10 +455,7 @@ void Heap::Minor_UpdateTenuredReference() {
 
 void Heap::Minor_UpdateLargeObjectReference() {
     // Similar to Tenured Space, but we iterate through large object space here
-    for (LargeObjectNode* node = large_object_space.next;
-            node != &large_object_space;
-            node = node->next) {
-        Object* object = reinterpret_cast<Object*>(node+1);
+    for (Object* object : Iterable<LargeObjectSpaceIterator> {}) {
         object->status_ = Status::NOT_MARKED;
         object->IterateField(UpdateIterator{});
     }
@@ -418,10 +483,7 @@ void Heap::Major_UpdateTenuredReference() {
 
 void Heap::Major_UpdateLargeObjectReference() {
     // Similar to Tenured Space, but we iterate through large object space here
-    for (LargeObjectNode* node = large_object_space.next;
-            node != &large_object_space;
-            node = node->next) {
-        Object* object = reinterpret_cast<Object*>(node+1);
+    for (Object* object : Iterable<LargeObjectSpaceIterator> {}) {
         if (object->status_ == Status::MARKED) {
             object->IterateField(UpdateIterator{});
         }
@@ -430,15 +492,12 @@ void Heap::Major_UpdateLargeObjectReference() {
 
 void Heap::MemorySpace_Copy(MemorySpace* space) {
     // Used for Eden Space and Survivor Space (mark-copy)
-    do {
-        for (Object* object : MemorySpaceWalker{ space }) {
-            if (object->status_ == Status::MARKED) {
-                object->status_ = Status::NOT_MARKED;
-                memcpy(object->dest_, object, object->size_);
-            }
+    for (Object* object : Iterable<MemorySpaceIterator> { space }) {
+        if (object->status_ == Status::MARKED) {
+            object->status_ = Status::NOT_MARKED;
+            memcpy(object->dest_, object, object->size_);
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 
@@ -471,7 +530,7 @@ void Heap::UpdateStackReference() {
 void Heap::EdenSpace_CalculateTarget() {
     // Calculate target address for Eden Space.
     // This is simple because the only target is Survivor Space
-    for (Object* object : MemorySpaceWalker{ eden_space }) {
+    for (Object* object : Iterable<MemorySpaceIterator> { eden_space }) {
         if (object->status_ == Status::MARKED) {
             // All Eden Space objects that survives a minor GC will be moved to survivor space
             object->dest_ = static_cast<Object*>(
@@ -503,27 +562,24 @@ void Heap::PromoteToTenuredSpace(Object *object) {
 
 void Heap::SurvivorSpace_CalculateTarget() {
     MemorySpace* space = survivor_from_space;
-    do {
-        for (Object* object : MemorySpaceWalker{ space }) {
-            if (object->status_ == Status::MARKED) {
-                // Promote an object that survives many times of GC
-                if (object->lifetime_ > TENURED_SPACE_THRESHOLD) {
-                    PromoteToTenuredSpace(object);
-                } else {
-                    // Objects that survives less than THRESHOLD times GC will remain in survivor space
-                    object->dest_ = static_cast<Object*>(
-                                        survivor_to_space->Allocate(object->size_, true)
-                                    );
-                    debug("Object %p [Survivor] is moved to %p [Survivor]\n", object, object->dest_);
-                    object->lifetime_++;
-                }
+    for (Object* object : Iterable<MemorySpaceIterator> { space }) {
+        if (object->status_ == Status::MARKED) {
+            // Promote an object that survives many times of GC
+            if (object->lifetime_ > TENURED_SPACE_THRESHOLD) {
+                PromoteToTenuredSpace(object);
             } else {
-                debug("Reclaim %p\n", object);
-                object->dest_ = nullptr;
+                // Objects that survives less than THRESHOLD times GC will remain in survivor space
+                object->dest_ = static_cast<Object*>(
+                                    survivor_to_space->Allocate(object->size_, true)
+                                );
+                debug("Object %p [Survivor] is moved to %p [Survivor]\n", object, object->dest_);
+                object->lifetime_++;
             }
+        } else {
+            debug("Reclaim %p\n", object);
+            object->dest_ = nullptr;
         }
-        space = space->next;
-    } while (space);
+    }
 }
 
 void Heap::TenuredSpace_CalculateTarget() {
@@ -552,16 +608,12 @@ void Heap::TenuredSpace_CalculateTarget() {
 }
 
 void Heap::Major_CleanLargeObject() {
-    for (LargeObjectNode* node = large_object_space.next, *prefetch = node->next;
-            node != &large_object_space;
-            node = prefetch, prefetch = node->next) {
-        Object* object = reinterpret_cast<Object*>(node+1);
-
+    LargeObjectSpaceIterator iterator;
+    while (iterator.HasNext()) {
+        Object* object = iterator.Next();
         if (object->status_ != Status::MARKED) {
             debug("Reclaim Large Object %p\n", object);
-            node->prev->next = node->next;
-            node->next->prev = node->prev;
-            Platform::Free(node, sizeof(LargeObjectNode) + object->size_);
+            iterator.Remove();
         }
     }
 }
@@ -592,6 +644,14 @@ void Heap::MinorGC() {
     // Calculate move target
     EdenSpace_CalculateTarget();
     SurvivorSpace_CalculateTarget();
+
+    // Weak references holders, if their referred object is collected, will be notified
+    // as Java's Reference queue works
+    NotifyWeakReference<false, MemorySpaceIterator>({eden_space});
+    NotifyWeakReference<false, MemorySpaceIterator>({survivor_from_space});
+    NotifyWeakReference<true, MemorySpaceIterator>({tenured_space});
+    NotifyWeakReference<true, LargeObjectSpaceIterator>({});
+    NotifyWeakReference<true, StackSpaceIterator>({});
 
     // Update stack and tenured space reference
     UpdateStackReference();
@@ -650,6 +710,12 @@ void Heap::MajorGC() {
     TenuredSpace_CalculateTarget();
     SurvivorSpace_CalculateTarget();
     // We do not move large target, and their dest_ is set in Major_FinalizeLargeObject()
+
+    NotifyWeakReference<false, MemorySpaceIterator>({eden_space});
+    NotifyWeakReference<false, MemorySpaceIterator>({survivor_from_space});
+    NotifyWeakReference<false, MemorySpaceIterator>({tenured_space});
+    NotifyWeakReference<false, LargeObjectSpaceIterator>({});
+    NotifyWeakReference<true, StackSpaceIterator>({});
 
     // Update stack and tenured space reference
     UpdateStackReference();
