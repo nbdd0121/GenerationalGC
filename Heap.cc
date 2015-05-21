@@ -605,6 +605,8 @@ void Heap::MinorGC() {
     eden_space->Clear();
     survivor_from_space->Clear();
 
+    survivor_from_space->Trim(1);
+
 #if NORLIT_DEBUG_MODE
     eden_space->FillUnallocated(0xCC);
     survivor_from_space->FillUnallocated(0xCC);
@@ -669,6 +671,9 @@ void Heap::MajorGC() {
     // Mark as clear for re-using
     eden_space->Clear();
     survivor_from_space->Clear();
+
+    survivor_from_space->Trim(1);
+    tenured_space->Trim(1);
 
 #if NORLIT_DEBUG_MODE
     eden_space->FillUnallocated(0xCC);

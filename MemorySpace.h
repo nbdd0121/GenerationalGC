@@ -20,6 +20,7 @@ struct MemorySpace {
 
     void FillUnallocated(uint8_t);
     void Destroy();
+    void Trim(size_t = 0);
     void* Allocate(size_t size, bool expand = false);
 
     inline void Clear();

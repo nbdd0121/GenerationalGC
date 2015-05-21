@@ -48,3 +48,22 @@ void MemorySpace::Destroy() {
     }
     Platform::Free(this, capacity);
 }
+
+void MemorySpace::Trim(size_t allowedBlankSpace) {
+    if (next) {
+        bool nextBlank = next->Begin() == next->End();
+        if (nextBlank) {
+            if (allowedBlankSpace) {
+                next->Trim(allowedBlankSpace - 1);
+            } else {
+                next->Trim();
+                MemorySpace* newNext = next->next;
+                next->next = nullptr;
+                next->Destroy();
+                next = newNext;
+            }
+        } else {
+            next->Trim(allowedBlankSpace);
+        }
+    }
+}

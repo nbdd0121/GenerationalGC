@@ -1,4 +1,5 @@
 #include "Handle.h"
+#include "Platform.h"
 #include <bitset>
 #include <cassert>
 
@@ -15,7 +16,7 @@ using namespace norlit::gc::detail;
 
 class norlit::gc::detail::HandleGroup : public Object {
   private:
-    static const size_t kHandlesPerGroup = 1024;
+    static const size_t kHandlesPerGroup = 984;
 
     // Tracks allocation using a bitmap_. TODO: Use a custom class to accelerate the allocation
     std::bitset<kHandlesPerGroup> bitmap_;
@@ -38,7 +39,11 @@ class norlit::gc::detail::HandleGroup : public Object {
     // HandleRoot is intended to serve as root.
     // Therefore, it should not be managed by heap
     void* operator new(size_t size) {
-        return ::operator new(size);
+        return Platform::Allocate(size);
+    }
+
+    void operator delete(void* ptr) {
+        Platform::Free(ptr, sizeof(HandleGroup));
     }
 };
 
