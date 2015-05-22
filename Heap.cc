@@ -34,6 +34,7 @@ struct Heap::UpdateIterator : public FieldIterator {
             return;
         }
         assert(obj->space_ != Space::STACK_SPACE);
+        assert(obj->dest_);
         *field = obj->dest_;
     }
 

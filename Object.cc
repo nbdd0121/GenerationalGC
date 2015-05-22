@@ -54,7 +54,15 @@ void Object::operator delete(void*) {
 }
 
 uintptr_t Object::HashCode() {
-    return reinterpret_cast<uintptr_t>(this);
+    // Use address is not correct for heap objects, otherwise hashcode changes for every gc
+    // However this is ok for stack objects, since their hashcode will not change
+    if (space_ == Space::STACK_SPACE) {
+        return reinterpret_cast<uintptr_t>(this);
+    } else {
+        // I haven't thought of a generic hash method yet
+        return 0;
+    }
+
 }
 
 bool Object::Equals(const Handle<Object>& obj) {
