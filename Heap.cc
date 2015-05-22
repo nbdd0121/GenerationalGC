@@ -446,7 +446,7 @@ void Heap::MemorySpace_Copy(MemorySpace* space) {
     for (Object* object : Iterable<MemorySpaceIterator> { space }) {
         if (object->status_ == Status::MARKED) {
             object->status_ = Status::NOT_MARKED;
-            memcpy(object->dest_, object, object->size_);
+            memcpy(static_cast<void*>(object->dest_), static_cast<void*>(object), object->size_);
         }
     }
 }
@@ -456,7 +456,7 @@ void Heap::MemorySpace_Move(MemorySpace* space) {
     for (Object* object : Iterable<MemorySpaceIterator> { space, true }) {
         if (object->status_ == Status::MARKED) {
             object->status_ = Status::NOT_MARKED;
-            memmove(object->dest_, object, object->size_);
+            memmove(static_cast<void*>(object->dest_), static_cast<void*>(object), object->size_);
         }
     }
 }
@@ -622,7 +622,8 @@ void Heap::MajorGC() {
         throw std::runtime_error{ "Major GC triggered in NoGC scope" };
     }
     debug("----- Major GC -----\n");
-    // Use reference count number assigned by root and tenured generation
+    // Do not reference count number assigned by root and tenured generation.
+    // Start from root all over
     Major_ScanHeapRoot();
 
     // Mark
