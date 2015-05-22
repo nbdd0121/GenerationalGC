@@ -44,7 +44,7 @@ class Array : public detail::ArrayBase {
     }
 
     Handle<T> Get(size_t index) {
-        ArrayBase::Get(index);
+        return static_cast<T*>(ArrayBase::Get(index));
     }
 
     size_t Length() {

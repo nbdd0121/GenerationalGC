@@ -1,6 +1,7 @@
 #include "Object.h"
 #include "Heap.h"
 #include "debug.h"
+#include "Handle.h"
 
 #include <cstdio>
 
@@ -50,4 +51,12 @@ void* Object::operator new(size_t size) {
 
 void Object::operator delete(void*) {
     assert(0);
+}
+
+uintptr_t Object::HashCode() {
+    return reinterpret_cast<uintptr_t>(this);
+}
+
+bool Object::Equals(const Handle<Object>& obj) {
+    return this == obj;
 }

@@ -12,6 +12,9 @@ namespace gc {
 
 class Object;
 
+template<typename T>
+class Handle;
+
 // An overloaded functor that iterates through fields of an object
 class FieldIterator {
   public:
@@ -78,6 +81,9 @@ class Object {
     // TODO: Implement copy-ctor and move-ctor for stack objects?
     Object(const Object& obj) = delete;
     void operator =(const Object&) = delete;
+
+    virtual uintptr_t HashCode();
+    virtual bool Equals(const Handle<Object>& object);
 
     static void* operator new(size_t);
     static void* operator new[](size_t) = delete;
