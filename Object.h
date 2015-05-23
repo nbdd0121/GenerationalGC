@@ -74,6 +74,8 @@ class Object {
     inline void WriteBarrier(Object** slot, Object* data);
     template<typename T>
     inline void WriteBarrier(T** slot, T* data);
+    template<typename T>
+    inline void WriteBarrier(T** slot, const Handle<T>& data);
 
     virtual void IterateField(const FieldIterator&);
     virtual void NotifyWeakReferenceCollected(Object** slot);
@@ -115,6 +117,11 @@ inline void Object::WriteBarrier(Object** slot, Object* data) {
 
 template<typename T>
 inline void Object::WriteBarrier(T** slot, T* data) {
+    WriteBarrier(reinterpret_cast<Object**>(slot), static_cast<Object*>(data));
+}
+
+template<typename T>
+inline void Object::WriteBarrier(T** slot, const Handle<T>& data) {
     WriteBarrier(reinterpret_cast<Object**>(slot), static_cast<Object*>(data));
 }
 
