@@ -34,7 +34,7 @@ template<typename T>
 class Handle: public detail::HandleBase {
   public:
     Handle() : HandleBase() {}
-    Handle(nullptr_t) : HandleBase() {}
+    Handle(std::nullptr_t) : HandleBase() {}
     Handle(T* obj) :HandleBase(obj) {}
     Handle(const Handle& h) :HandleBase(h) {}
     Handle(Handle&& h) :HandleBase(std::move(h)) {}

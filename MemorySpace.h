@@ -16,8 +16,10 @@ struct MemorySpace {
     MemorySpace* next = nullptr;
     uintptr_t data[1];
 
+  private:
     MemorySpace(size_t capacity);
 
+  public:
     void FillUnallocated(uint8_t);
     void Destroy();
     void Trim(size_t = 0);
