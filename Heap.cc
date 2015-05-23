@@ -687,3 +687,21 @@ void Heap::MajorGC() {
 
     debug("----- Major GC Finished -----\n");
 }
+
+void Heap::Dump(const HeapIterator& iter) {
+    for (Object* o : Iterable < MemorySpaceIterator > { eden_space }) {
+        iter(o);
+    }
+
+    for (Object* o : Iterable < MemorySpaceIterator > { survivor_from_space }) {
+        iter(o);
+    }
+
+    for (Object* o : Iterable < MemorySpaceIterator > { tenured_space }) {
+        iter(o);
+    }
+
+    for (Object* o : Iterable < LargeObjectSpaceIterator > {}) {
+        iter(o);
+    }
+}

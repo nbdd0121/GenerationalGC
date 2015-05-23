@@ -23,7 +23,7 @@ class HandleBase {
     void operator =(const HandleBase& obj);
     void operator =(HandleBase&& obj);
 
-    Object* operator *() const {
+    Object* Get() const {
         return object_?*object_:nullptr;
     }
 };
@@ -31,7 +31,7 @@ class HandleBase {
 }
 
 template<typename T>
-class Handle: public detail::HandleBase {
+class Handle: detail::HandleBase {
   public:
     Handle() : HandleBase() {}
     Handle(std::nullptr_t) : HandleBase() {}
@@ -52,11 +52,15 @@ class Handle: public detail::HandleBase {
     }
 
     T* operator ->() const {
-        return static_cast<T*>(HandleBase::operator*());
+        return static_cast<T*>(Get());
+    }
+
+    explicit operator bool() const {
+        return !!operator T*();
     }
 
     operator T*() const {
-        return static_cast<T*>(HandleBase::operator*());
+        return static_cast<T*>(Get());
     }
 
     template<typename D>

@@ -8,6 +8,11 @@ namespace gc {
 
 struct MemorySpace;
 
+class HeapIterator {
+  public:
+    virtual void operator()(Object* obj) const = 0;
+};
+
 class Heap {
     struct MarkingIterator;
     struct UpdateIterator;
@@ -78,6 +83,7 @@ class Heap {
   public:
     static void MinorGC();
     static void MajorGC();
+    static void Dump(const HeapIterator&);
 
     friend class Object;
     friend class NoGC;

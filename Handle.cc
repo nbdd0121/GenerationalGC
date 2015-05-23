@@ -146,7 +146,7 @@ void HandleBase::operator= (Object* obj) {
 }
 
 void HandleBase::operator = (const HandleBase& obj) {
-    operator=(obj.operator*());
+    operator=(obj.Get());
 }
 
 void HandleBase::operator = (HandleBase&& obj) {
