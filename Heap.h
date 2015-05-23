@@ -33,6 +33,7 @@ class Heap {
         LargeObjectNode* prev;
         LargeObjectNode* next;
     };
+    static bool initialized;
     static Object stack_space;
     static LargeObjectNode large_object_space;
     static MemorySpace* eden_space;

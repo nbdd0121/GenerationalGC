@@ -216,6 +216,7 @@ class Heap::Iterable {
     }
 };
 
+bool Heap::initialized = false;
 Object Heap::stack_space{};
 Heap::LargeObjectNode Heap::large_object_space{
     &large_object_space,
@@ -240,6 +241,7 @@ void Heap::GlobalInitialize() {
     survivor_to_space->FillUnallocated(0xCC);
     tenured_space->FillUnallocated(0xCC);
 #endif
+    initialized = true;
 }
 
 void Heap::GlobalDestroy() {
@@ -314,22 +316,26 @@ void* Heap::Allocate(size_t size) {
 void Heap::Initialize(Object* object) {
     // If allocation is on stack
     if (allocating_size == 0) {
-        if (object == &stack_space) {
-            // This means static variable's constructor is called, so prepare everything
+        if (!initialized) {
             GlobalInitialize();
-            object->stack_.prev_ = object;
-            object->stack_.next_ = object;
-        } else {
+            stack_space.stack_.prev_ = &stack_space;
+            stack_space.stack_.next_ = &stack_space;
+            stack_space.space_ = Space::STACK_SPACE;
+        }
+        // Root is ignored by us
+        if (object != &stack_space) {
             // Add the object to the double linked list
             object->stack_.prev_ = stack_space.stack_.prev_;
             object->stack_.next_ = &stack_space;
             stack_space.stack_.prev_->stack_.next_ = object;
             stack_space.stack_.prev_ = object;
+
+            object->space_ = Space::STACK_SPACE;
         }
-        // We only care space_ for stack objects. Everything else is for heap objects
-        object->space_ = Space::STACK_SPACE;
         return;
     }
+
+    assert(initialized);
 
     if (allocating_size > LARGE_OBJECT_THRESHOLD) {
         // Large object will never be moved
