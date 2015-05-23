@@ -314,14 +314,15 @@ void* Heap::Allocate(size_t size) {
 }
 
 void Heap::Initialize(Object* object) {
+    if (!initialized) {
+        GlobalInitialize();
+        stack_space.stack_.prev_ = &stack_space;
+        stack_space.stack_.next_ = &stack_space;
+        stack_space.space_ = Space::STACK_SPACE;
+    }
+
     // If allocation is on stack
     if (allocating_size == 0) {
-        if (!initialized) {
-            GlobalInitialize();
-            stack_space.stack_.prev_ = &stack_space;
-            stack_space.stack_.next_ = &stack_space;
-            stack_space.space_ = Space::STACK_SPACE;
-        }
         // Root is ignored by us
         if (object != &stack_space) {
             // Add the object to the double linked list
@@ -334,8 +335,6 @@ void Heap::Initialize(Object* object) {
         }
         return;
     }
-
-    assert(initialized);
 
     if (allocating_size > LARGE_OBJECT_THRESHOLD) {
         // Large object will never be moved
