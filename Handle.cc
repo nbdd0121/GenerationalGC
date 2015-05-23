@@ -33,7 +33,16 @@ class norlit::gc::detail::HandleGroup : public Object {
     Object** Allocate();
     void Free(Object** ptr);
     void Write(Object** ptr, Object* data) {
-        WriteBarrier(ptr, data);
+        // HandleGroup is always in STACK_SPACE
+        // We specially design Handle, so pointing to stack space is allowed
+        // On stack objects may be regard as tagged pointers but we detail them in the same way
+        if (data && !data->IsTagged() && data->space_ != Space::STACK_SPACE) {
+            data->IncRefCount();
+        }
+        if (*ptr && !(*ptr)->IsTagged() && (*ptr)->space_ != Space::STACK_SPACE) {
+            (*ptr)->DecRefCount();
+        }
+        *ptr = data;
     }
 
     // HandleRoot is intended to serve as root.
@@ -54,7 +63,11 @@ HandleGroup* root = nullptr;
 void HandleGroup::IterateField(const FieldIterator& iter) {
     if (size_) {
         for (size_t i = 0; i < kHandlesPerGroup; i++) {
-            iter(&handles_[i]);
+            Object* data = handles_[i];
+            // Special treatment to make handle to stack object legal
+            if (data && !data->IsTagged() && data->space_ != Space::STACK_SPACE) {
+                iter(&handles_[i]);
+            }
         }
     }
 }
@@ -82,7 +95,7 @@ Object** HandleGroup::Allocate() {
 void HandleGroup::Free(Object** ptr) {
     ptrdiff_t offset = ptr - handles_;
     if (offset >= 0 && offset < static_cast<int>(kHandlesPerGroup)) {
-        WriteBarrier(ptr, nullptr);
+        Write(ptr, nullptr);
         bitmap_.reset(offset);
         size_--;
     } else {

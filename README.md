@@ -10,7 +10,7 @@ Eden Space        | Newly created objects. Objects survived a gc will be moved t
 Survivor Space    | Divided mark-copy space. Objects that survives few gc will be kept in this space. Once object survives certain gc cycles, it will be promoted to the tenured space.
 Tenured Space     | Area that will not be marked in minor GC. Write barrier is used, and in current implementation, a reference counting mechanism is used to speed up the marking phase. Mark-compact will take in place when a major GC happens.
 Large Object Space| Large objects will be allocated in this space. This space is similar to tenured space, but mark-sweep instead of mark-compact is used.
-Stack Space       | Non-heap objects. In this GC design, objects can be allocated on stack instead of on heap. They act as GC roots, but they should **not** be referenced by any other objects.
+Stack Space       | Non-heap objects. In this GC design, objects can be allocated on stack instead of on heap. They act as GC roots, but they should **not** be referenced by any other objects. They, however, can be referenced by Handle, since Handle<T>(this) is very useful in class implementation. However, a user should make sure that lifetime of Handle is shorter than lifetime of the stack class.
 
 ##Garbage Collection Procedure
 The following procedure applies both to minor and major gc.

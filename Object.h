@@ -15,6 +15,10 @@ class Object;
 template<typename T>
 class Handle;
 
+namespace detail {
+class HandleGroup;
+}
+
 // An overloaded functor that iterates through fields of an object
 class FieldIterator {
   public:
@@ -90,6 +94,7 @@ class Object {
     static void operator delete(void*);
 
     friend class Heap;
+    friend class detail::HandleGroup;
 };
 
 inline bool Object::IsTagged() {
