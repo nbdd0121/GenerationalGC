@@ -227,6 +227,7 @@ MemorySpace* Heap::survivor_from_space;
 MemorySpace* Heap::survivor_to_space;
 MemorySpace* Heap::tenured_space;
 uint32_t Heap::allocating_size = 0;
+void* Heap::allocating_object = 0;
 bool Heap::full_gc_suggested = false;
 uintptr_t Heap::no_gc_counter = 0;
 
@@ -259,6 +260,15 @@ void Heap::GlobalDestroy() {
 }
 
 void* Heap::Allocate(size_t size) {
+    if (allocating_object) {
+        assert(0);
+    }
+
+#if NORLIT_DEBUG_MODE == 3
+    if (!no_gc_counter) {
+        MinorGC();
+    }
+#endif
     if (size > 0xFFFFFFFF) {
         throw std::bad_alloc{};
     }
@@ -285,6 +295,8 @@ void* Heap::Allocate(size_t size) {
         large_object_space.prev = node;
 
         void* ret = static_cast<void*>(node + 1);
+
+        allocating_object = ret;
         debug("A new large object is allocated on %p\n", ret);
         return ret;
     }
@@ -310,6 +322,7 @@ void* Heap::Allocate(size_t size) {
         }
     }
     debug("A new object is allocated on %p\n", ret);
+    allocating_object = ret;
     return ret;
 }
 
@@ -322,7 +335,7 @@ void Heap::Initialize(Object* object) {
     }
 
     // If allocation is on stack
-    if (allocating_size == 0) {
+    if (allocating_object != object) {
         // Root is ignored by us
         if (object != &stack_space) {
             // Add the object to the double linked list
@@ -357,12 +370,18 @@ void Heap::Initialize(Object* object) {
     object->status_ = Status::NOT_MARKED;
     object->lifetime_ = 0;
     allocating_size = 0;
+    allocating_object = nullptr;
 }
 
 void Heap::UntrackStackObject(Object* object) {
+    // If we already destory the heap, we are not going to track stack any more
+    if (!initialized) {
+        return;
+    }
     if (object == &stack_space) {
         // If it's the global destructor, clean up everything
         GlobalDestroy();
+        initialized = false;
         return;
     }
 

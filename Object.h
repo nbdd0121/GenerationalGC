@@ -63,8 +63,6 @@ class Object {
     // # of gcs the object survived
     uint8_t lifetime_;
 
-    inline bool IsTagged();
-
     inline void IncRefCount();
     inline void DecRefCount();
 
@@ -72,12 +70,11 @@ class Object {
 
   protected:
     inline void WriteBarrier(Object** slot, Object* data);
-    template<typename T>
-    inline void WriteBarrier(T** slot, T* data);
+    template<typename T, typename U>
+    inline void WriteBarrier(T** slot, U* data);
     template<typename T>
     inline void WriteBarrier(T** slot, const Handle<T>& data);
 
-    virtual void IterateField(const FieldIterator&);
     virtual void NotifyWeakReferenceCollected(Object** slot);
 
   public:
@@ -88,8 +85,12 @@ class Object {
     Object(const Object& obj) = delete;
     void operator =(const Object&) = delete;
 
+    inline bool IsTagged() const;
+
     virtual uintptr_t HashCode();
     virtual bool Equals(const Handle<Object>& object);
+
+    virtual void IterateField(const FieldIterator&);
 
     static void* operator new(size_t);
     static void* operator new[](size_t) = delete;
@@ -99,7 +100,7 @@ class Object {
     friend class detail::HandleGroup;
 };
 
-inline bool Object::IsTagged() {
+inline bool Object::IsTagged() const {
     return (reinterpret_cast<uintptr_t>(this) & 7) != 0;
 }
 
@@ -115,9 +116,9 @@ inline void Object::WriteBarrier(Object** slot, Object* data) {
     }
 }
 
-template<typename T>
-inline void Object::WriteBarrier(T** slot, T* data) {
-    WriteBarrier(reinterpret_cast<Object**>(slot), static_cast<Object*>(data));
+template<typename T, typename U>
+inline void Object::WriteBarrier(T** slot, U* data) {
+    WriteBarrier(reinterpret_cast<Object**>(slot), static_cast<Object*>(static_cast<T*>(data)));
 }
 
 template<typename T>

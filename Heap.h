@@ -43,6 +43,9 @@ class Heap {
 
     // Size of allocating object. Passed from Allocate() to Initialize()
     static uint32_t allocating_size;
+    // Object that allocating_size refers to
+    static void* allocating_object;
+
     // Suggest a full gc is needed. Set when tenured space is expanded
     static bool full_gc_suggested;
     static uintptr_t no_gc_counter;

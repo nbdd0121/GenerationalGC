@@ -14,6 +14,8 @@
 #define debug(...)
 #elif NORLIT_DEBUG_MODE == 2
 #define debug(...) printf(__VA_ARGS__)
+#elif NORLIT_DEBUG_MODE == 3
+#define debug(...) printf(__VA_ARGS__)
 #endif
 
 #include <cassert>

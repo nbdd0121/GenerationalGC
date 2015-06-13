@@ -128,8 +128,12 @@ HandleBase::HandleBase(Object* obj) {
 HandleBase::HandleBase(const HandleBase& obj) {
     // No need to check root!=nullptr.
     // Copy-ctor means HandleBase is at least constructed once before
-    object_ = root->Allocate();
-    root->Write(object_, *obj.object_);
+    if (obj.object_) {
+        object_ = root->Allocate();
+        root->Write(object_, *obj.object_);
+    } else {
+        object_ = nullptr;
+    }
 }
 
 HandleBase::HandleBase(HandleBase&& obj) {
