@@ -73,6 +73,8 @@ class Object {
     template<typename T, typename U>
     inline void WriteBarrier(T** slot, U* data);
     template<typename T>
+    inline void WriteBarrier(T** slot, std::nullptr_t);
+    template<typename T>
     inline void WriteBarrier(T** slot, const Handle<T>& data);
 
     virtual void NotifyWeakReferenceCollected(Object** slot);
@@ -119,6 +121,11 @@ inline void Object::WriteBarrier(Object** slot, Object* data) {
 template<typename T, typename U>
 inline void Object::WriteBarrier(T** slot, U* data) {
     WriteBarrier(reinterpret_cast<Object**>(slot), static_cast<Object*>(static_cast<T*>(data)));
+}
+
+template<typename T>
+inline void Object::WriteBarrier(T** slot, std::nullptr_t data) {
+    WriteBarrier(reinterpret_cast<Object**>(slot), static_cast<Object*>(nullptr));
 }
 
 template<typename T>

@@ -94,6 +94,11 @@ class Handle: detail::HandleBase {
         return reinterpret_cast<T*>(Get());
     }
 
+    template<typename = std::enable_if<!std::is_same<T, Object>::value>>
+    explicit operator Object*() const {
+        return Get();
+    }
+
     template<typename D>
     explicit operator D*() const {
         return static_cast<D*>(operator T*());

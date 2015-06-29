@@ -38,7 +38,39 @@ class ArrayBase: public Object {
 template<typename T>
 class Array : public detail::ArrayBase {
     Array(size_t length) : ArrayBase(length) {}
+
+    struct Iterator {
+        gc::Handle<Array<T>> self;
+        size_t ptr;
+
+        Handle<T> operator*() {
+            return self->Get(ptr);
+        }
+
+        bool operator !=(const Iterator& another) {
+            return ptr != another.ptr;
+        }
+
+        Iterator& operator++() {
+            ptr++;
+            return *this;
+        }
+    };
+
+    struct Iterable {
+        gc::Handle<Array<T>> self;
+
+        Iterator begin() {
+            return{ self, 0 };
+        }
+
+        Iterator end() {
+            return{ self, self->Length() };
+        }
+    };
+
   public:
+
     void Put(size_t index, const Handle<T>& obj) {
         ArrayBase::Put(index, obj);
     }
@@ -49,6 +81,10 @@ class Array : public detail::ArrayBase {
 
     size_t Length() {
         return ArrayBase::Length();
+    }
+
+    Iterable GetIterable() {
+        return{ this };
     }
 
     static Handle<Array> New(size_t length) {
@@ -92,7 +128,7 @@ class ValueArray : public Object {
     }
 
     static Handle<ValueArray> New(size_t length) {
-        return new(length, false)ValueArray(length);
+        return new(length, false) ValueArray(length);
     }
 };
 
